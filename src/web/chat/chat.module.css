@@ -235,3 +235,70 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+.tableFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.tableFooter .truncated {
+  margin: 0;
+}
+
+.downloads {
+  margin: 0 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
+.downloads .btn {
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.85rem;
+}
+
+.chart {
+  margin: 0;
+}
+
+.chartCanvas {
+  width: 100%;
+  min-height: 180px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.chartCanvas :global(.vega-embed) {
+  display: block;
+  width: 100%;
+}
+
+.headerActions {
+  margin: 0;
+}
+
+.notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius);
+}
+
+.notice .tag {
+  margin-right: var(--space-2);
+}
+
+.seeAll {
+  font-size: 0.9rem;
+  font-weight: 400;
+  margin-left: var(--space-2);
+}

@@ -74,6 +74,19 @@ describe('server config from environment', () => {
     });
   });
 
+  describe('the web app URL (Slack "Open in dashboard" links)', () => {
+    test('is APP_URL, else AUTH_URL, without a trailing slash', () => {
+      expect(parseServerConfig({ ...minimal, AUTH_URL: 'https://botley.example/' }).core.appUrl).toBe('https://botley.example');
+      expect(parseServerConfig({ ...minimal, AUTH_URL: 'https://a.example', APP_URL: 'https://b.example' }).core.appUrl).toBe(
+        'https://b.example',
+      );
+    });
+
+    test('must be an http(s) URL', () => {
+      expect(() => parseServerConfig({ ...minimal, APP_URL: 'botley.example' })).toThrow(/APP_URL/);
+    });
+  });
+
   test('reads a comma-separated admin list, ignoring blanks and spaces', () => {
     const config = parseServerConfig({ ...minimal, ADMIN_SLACK_USER_IDS: ' U1, U2 ,,U3 ' });
 

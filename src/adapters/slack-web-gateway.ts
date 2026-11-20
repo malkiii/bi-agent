@@ -42,5 +42,22 @@ export function createSlackWebGateway(client: WebClient): SlackGateway {
     async openModal(triggerId, view) {
       await client.views.open({ trigger_id: triggerId, view: view as ViewsOpenArguments['view'] });
     },
+
+    async uploadFiles({ channel, threadTs, files, comment }) {
+      const file_uploads = files.map((f) => ({
+        file: Buffer.from(f.content),
+        filename: f.filename,
+        title: f.title,
+        ...(f.altText && { alt_text: f.altText }),
+      }));
+      const args = {
+        channel_id: channel,
+        file_uploads,
+        ...(threadTs && { thread_ts: threadTs }),
+        ...(comment && { initial_comment: comment }),
+      };
+      // The overloads tie thread_ts to channel_id in ways a spread can't express.
+      await client.filesUploadV2(args as Parameters<WebClient['filesUploadV2']>[0]);
+    },
   };
 }

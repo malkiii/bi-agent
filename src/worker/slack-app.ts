@@ -3,7 +3,7 @@
  * Business rules stay in `core.slackBot`; this file only filters events and maps payloads.
  */
 import { App, LogLevel } from '@slack/bolt';
-import { SHOW_QUERY_ACTION_ID, type AppCore, type SlackPrompt } from '@/core';
+import { OPEN_IN_DASHBOARD_ACTION_ID, SHOW_QUERY_ACTION_ID, type AppCore, type SlackPrompt } from '@/core';
 import type { Logger } from '@/server/bootstrap';
 
 /** The fields of an `app_mention` / `message` event this adapter reads. */
@@ -79,6 +79,11 @@ export async function startSlackApp({
     const triggerId = 'trigger_id' in body ? body.trigger_id : undefined;
     if (!value || !triggerId) return;
     await core.slackBot.showQuery({ triggerId, value }).catch((error: unknown) => logger.error(`Show query failed: ${describe(error)}`));
+  });
+
+  // "Open in dashboard" is a link button: the browser opens the URL, Slack still expects an ack.
+  app.action(OPEN_IN_DASHBOARD_ACTION_ID, async ({ ack }) => {
+    await ack();
   });
 
   app.error(async (error) => logger.error(`Slack error: ${describe(error)}`));

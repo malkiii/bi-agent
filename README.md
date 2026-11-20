@@ -31,7 +31,7 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 ### Slack app setup (bot)
 
 1. Under **Socket Mode**, enable it and create an app-level token with `connections:write`; put it in `SLACK_APP_TOKEN` (`xapp-…`).
-2. Under **OAuth & Permissions > Bot Token Scopes**, add `app_mentions:read`, `chat:write`, `reactions:write`, `im:history`, `channels:read`, `groups:read`, `im:read`. Install the app and put the Bot User OAuth Token in `SLACK_BOT_TOKEN` (`xoxb-…`).
+2. Under **OAuth & Permissions > Bot Token Scopes**, add `app_mentions:read`, `chat:write`, `reactions:write`, `files:write` (chart PNGs and table files in threads), `im:history`, `channels:read`, `groups:read`, `im:read`. Install the app and put the Bot User OAuth Token in `SLACK_BOT_TOKEN` (`xoxb-…`).
 3. Under **Event Subscriptions**, subscribe to the bot events `app_mention` and `message.im` (not `message.channels`: thread chatter without a mention is ignored). Under **Interactivity & Shortcuts**, turn interactivity on (no URL needed in Socket Mode). Under **App Home**, enable the Messages tab and "Allow users to send messages".
 4. Invite the bot to channels (`/invite @Botley`). The worker logs `Slack connected in Socket Mode` when it is up.
 
@@ -45,6 +45,7 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 | `SLACK_TEAM_ID` | web, worker | The only workspace allowed to sign in. Required. |
 | `ADMIN_SLACK_USER_IDS` | web, worker | Comma-separated initial admins. |
 | `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` | worker (web: bot token only) | Slack bot. Optional; without them the worker runs without Slack. |
+| `APP_URL` | worker | The web app's URL for Slack's "Open in dashboard" links. Default: `AUTH_URL`. Neither set = no link. |
 | `ENCRYPTION_KEY` | web, worker | 32-byte key, base64 or hex (`openssl rand -base64 32`). Encrypts Data Source credentials (AES-256-GCM). Required; keep it stable, or saved credentials become unreadable. |
 | `MONGO_URL` | web, worker | Required outside compose. Compose always uses `mongodb://mongo:27017`. |
 | `MONGO_DB` | web, worker | Database name. Default `botley`. |
@@ -86,8 +87,10 @@ src/
     users/         Slack sign-in, roles (list, setRole), requireAdmin
     preferences/   Per-user UI preferences (theme)
     data-sources/  driver.ts (the driver contract types), data-sources.ts (admin CRUD, test, introspect, Exposed Datasets, withDriver)
-    conversations/ answer.ts (Answer + Result Block model, AnswerEvent), conversations.ts (startWeb, findOrStartSlack, ask, get, list)
-    slack/         slack-bot.ts (handlePrompt, showQuery), render.ts (Answer -> Block Kit, pure)
+    conversations/ answer.ts (Answer + Result Block model, AnswerEvent), conversations.ts (startWeb, findOrStartSlack, ask, get, list, history, fork)
+    charts/        chart.ts (Chart block: spec check, rows, themed Vega-Lite; pure, browser-safe), png.ts (server PNG via vega + resvg)
+    files/         table-files.ts (Table block -> CSV / XLSX, file names; pure)
+    slack/         slack-bot.ts (handlePrompt, showQuery, thread uploads), render.ts (Answer -> Block Kit + uploads, pure)
     agent/         The agent loop: agent.ts (runAgent), tools.ts (toolkits), catalog.ts (what the agent may query), answer-draft.ts
     pinned-queries/ Pin an Answer's queries + layout, re-run them without the LLM (Saved Questions, Reports, KPIs)
     saved-questions/ Saved Questions: save an Answer, private/shared, re-run
@@ -104,7 +107,7 @@ src/
   web/             Web-only code: auth helpers, server runtime, components
     botley/        Botley's state machine (machine.ts) and store (BotleyProvider.tsx)
     theme/         Light/dark theme: toggle, server action, per-user preference
-    chat/          Web chat: ChatView (prompt box + streamed Answers), AnswerView (blocks, sources, show query), wire.ts (NDJSON protocol)
+    chat/          Web chat: ChatView (prompt box + streamed Answers), AnswerView (blocks, sources, show query, CSV/XLSX links), ChartView (vega-embed), actions.ts (fork), wire.ts (NDJSON protocol)
     saved-questions/ "Save question" button, re-run view, server actions
   app/             Next.js App Router routes
     (app)/         Signed-in pages inside the app shell
@@ -163,33 +166,36 @@ The Slack avatar `public/botley-avatar.png` (1024 px) is rendered from `public/b
 
 ## Answering Prompts (agent loop)
 
-Every transport answers through one App Core use case, `core.conversations.ask(actor, conversationId, prompt, { onEvent })`. It stores the Prompt, runs the agent, stores the Answer and resolves with it. When the model or a tool crashes it never rejects: it resolves with `status: 'failed'` and a user-safe `error` (the cause goes to `AppCoreDeps.onAgentError`). It rejects only for access or input errors (`NotFoundError` when the actor isn't a Participant, `ValidationError` for an empty Prompt).
+Every transport answers through one App Core use case, `core.conversations.ask(actor, conversationId, prompt, { onEvent })`. It stores the Prompt, runs the agent, stores the Answer and resolves with it. When the model or a tool crashes it never rejects: it resolves with `status: 'failed'` and a user-safe `error` (the cause goes to `AppCoreDeps.onAgentError`). It rejects only for access or input errors (`NotFoundError` when the actor isn't a Participant, `ValidationError` for an empty Prompt, or for a Slack Conversation, which continues in Slack or in a Fork; the Slack bot uses `answerPrompt`).
 
 - **Conversation model** (`src/core/conversations/conversations.ts`, Mongo `conversations` + `conversationMessages`): `source` is `{ kind: 'web' }` or `{ kind: 'slack', channel, threadTs }` (unique index on channel + thread). `participants` holds Slack user IDs; `get`/`list`/`ask` only work for Participants. Messages alternate `prompt` / `answer` in `seq` order. Earlier messages become model context through `summarize(answer)` (text, table shapes, executed queries). Slack uses `findOrStartSlack(actor, { channel, threadTs })`, which upserts the thread's Conversation and adds the poster to `participants`, then `answerPrompt` (`ask` plus the stored Answer's message id). Forks copy the messages into a new web Conversation.
-- **Answer model** (`src/core/conversations/answer.ts`): `blocks` (Result Blocks, a discriminated union on `type`; today `text` and `table`; `chart` and `file` get added there), `sources` (Data Sources and Dataset ids used, matched from the query text), `queries` (every executed query, failed ones too, with `resultId`, `language`, exact `query`, row count and the error; this powers "show query" and Pinned Queries; data blocks point back to it through `resultId`), `usage` and timing. Renderers must ignore block types they don't know. A Table block keeps at most `TABLE_BLOCK_MAX_ROWS` (1 000) rows and sets `truncated`, because the Answer is stored in one Mongo document.
+- **Answer model** (`src/core/conversations/answer.ts`): `blocks` (Result Blocks, a discriminated union on `type`: `text`, `table` and `chart`; File Result Blocks are not stored, they are CSV/XLSX generated from a Table block when a transport needs them), `sources` (Data Sources and Dataset ids used, matched from the query text), `queries` (every executed query, failed ones too, with `resultId`, `language`, exact `query`, row count and the error; this powers "show query" and Pinned Queries; data blocks point back to it through `resultId`), `usage` and timing. Renderers must ignore block types they don't know. A Table block keeps at most `TABLE_BLOCK_MAX_ROWS` (1 000) rows and sets `truncated`, because the Answer is stored in one Mongo document. A Chart block (`src/core/charts/chart.ts`) holds `kind` (bar, line, area, pie, scatter, big-number, named from the mark), the agent's single-view Vega-Lite `spec` without data, the `resultId` it draws and that result's rows as objects (`data`, at most `CHART_MAX_ROWS` = 1 000).
 - **Events**: `onEvent` gets `progress` (a label such as "Querying Warehouse…"), `query` and `block` events while the agent works. The web streams them to the browser; Slack updates its placeholder message with the `progress` labels.
-- **Slack** (`src/core/slack/`, ADR 0004): the worker's Bolt adapter (`src/worker/slack-app.ts`) turns `app_mention` and DM `message` events into `core.slackBot.handlePrompt(...)`. That use case ignores redelivered events (`slackEvents`, keyed by channel + ts, 24 h TTL), reacts 👀, posts a placeholder in the thread, edits it with each `progress` label, then edits in the rendered Answer (❌ plus the error on failure). `render.ts` is pure: `renderAnswer` (Text as mrkdwn sections; the first Table as a Block Kit table of up to `SLACK_INLINE_TABLE_ROWS` = 15 rows, later tables as monospaced text; sources footer; "Show query" button whose value is the Answer message id) and `renderQueryModal`. New Result Block kinds get a `case` in `renderAnswer`; uploads (chart PNG, files) need a new `SlackGateway` method. `SlackGateway` (port) is implemented by `src/adapters/slack-web-gateway.ts` and, in tests, `InMemorySlackGateway` (`messages`, `reactions`, `modals`).
+- **Slack** (`src/core/slack/`, ADR 0004): the worker's Bolt adapter (`src/worker/slack-app.ts`) turns `app_mention` and DM `message` events into `core.slackBot.handlePrompt(...)`. That use case ignores redelivered events (`slackEvents`, keyed by channel + ts, 24 h TTL), reacts 👀, posts a placeholder in the thread, edits it with each `progress` label, then edits in the rendered Answer (❌ plus the error on failure), then posts its chart PNGs and table files in the thread (`SlackGateway.uploadFiles`, one message per block; if an upload fails, a warning is posted and the Answer stays). `render.ts` is pure: `renderAnswer` returns Block Kit plus `uploads` (Text as mrkdwn sections; the first Table as a Block Kit table, later tables as monospaced text; tables of up to `SLACK_INLINE_TABLE_ROWS` = 15 rows are shown whole, longer or truncated ones show `SLACK_PREVIEW_TABLE_ROWS` = 10 rows and attach the full table as CSV and XLSX; each Chart is a line in the message plus a PNG upload rendered by `renderChartPng`; sources footer; "Show query" button whose value is the Answer message id; "Open in dashboard" link button to `$APP_URL/chat/fork/<conversationId>`) and `renderQueryModal`. New Result Block kinds get a `case` in `renderAnswer`. `SlackGateway` (port) is implemented by `src/adapters/slack-web-gateway.ts` and, in tests, `InMemorySlackGateway` (`messages`, `reactions`, `modals`, `uploads`, `failUploads`).
 - **The loop** (`src/core/agent/agent.ts`): AI SDK `streamText` with tools and `stopWhen: isStepCount(MAX_AGENT_STEPS)`. The model builds the Answer by calling emit tools. Plain text in its last step becomes a Text block too.
-- **Tools** come in toolkits (`src/core/agent/tools.ts`). A toolkit is `(ctx: { catalog, answer }) => { tools, instructions? }`, and `builtInToolkits` lists them: `catalogToolkit` (`listDatasets`, `describeDataset`), `queryToolkit` (`runQuery`) and `emitToolkit` (`emitText`, `emitTable`). To add `emitChart` or `combineResults`, write a toolkit that reads results with `answer.result(resultId)` and adds blocks with `answer.addBlock(...)`, then add it to `builtInToolkits`.
+- **Tools** come in toolkits (`src/core/agent/tools.ts`). A toolkit is `(ctx: { catalog, answer }) => { tools, instructions? }`, and `builtInToolkits` lists them: `catalogToolkit` (`listDatasets`, `describeDataset`), `queryToolkit` (`runQuery`), `emitToolkit` (`emitText`, `emitTable`) and `chartToolkit` (`emitChart`: `checkChartSpec` refuses unknown fields, marks other than bar/line/area/arc/point/text, composition, and any `data`/`url`/`href`/image, then Vega-Lite compiles it; refusals go back to the model). To add `combineResults`, write a toolkit that reads results with `answer.result(resultId)` and adds blocks with `answer.addBlock(...)`, then add it to `builtInToolkits`.
 - **runQuery** runs through the Data Source's driver (read-only enforcement stays in the driver). `QueryRejectedError`, `QueryFailedError` and `QueryTimeoutError` messages go back to the model as `{ ok: false, error, attemptsLeft }` so it can fix the query. After `MAX_FAILED_QUERIES` (4) failures in one Answer it stops running queries. The model sees 20 preview rows. The full result stays in the draft under its `resultId` for the emit tools. MongoDB sources take the query as a JSON string.
 - **Which Data Sources** (`src/core/agent/catalog.ts`): only Data Sources with Exposed Datasets, and only those Datasets. `createAgentCatalog(dataSources, { onlyDataSourceIds })` is where the Conversation lock (web) and Channel Default (Slack) plug in.
 - **LLM**: `LanguageModelProvider` (port) is built from `LLM_PROVIDER`/`LLM_MODEL` in `src/adapters/llm.ts`. `ServerConfig.llm.credentials` keeps every configured provider, ready for the admin provider switch.
 - **Tests** script the model with `h.llm.script(...)`. Each turn serves both `doGenerate` and `doStream`, and `h.llm.model.doStreamCalls[n].prompt` shows what the model received. See `src/core/conversations/conversations.test.ts` (real Postgres + Mongo).
 
-Web chat: `/chat` (new Conversation + recent list) and `/chat/[id]` (reopen). `POST /api/chat` `{ conversationId?, prompt }` streams NDJSON `ChatStreamEvent`s (`conversation`, the `AnswerEvent`s, then `answer` (with the stored `messageId`) or `error`). See `src/web/chat/wire.ts`.
+Web chat: `/chat` (new Conversation + recent list) and `/chat/[id]` (reopen; Slack Conversations are read-only there, and `conversations.ask` refuses them). Charts are drawn with vega-embed in the theme colours read from the CSS tokens, redrawn when the theme changes. Stored Table blocks offer CSV/XLSX downloads from `GET /api/answers/[messageId]/blocks/[index]?format=csv|xlsx` (Participants only, else 404).
+
+History and Forks: `/history` lists `conversations.history(actor, { source?, page })` (Participant only, newest first, 20 per page). A Slack Conversation's "Open in dashboard" (Slack button, history, `/chat/[id]`) goes to `/chat/fork/[id]`, whose button (a POST, so link previews never create anything) calls `conversations.fork(actor, id)`: a new Web Conversation for that Participant with `forkedFrom` and a copy of the thread's messages, which become model context. The Slack Conversation is never changed. `POST /api/chat` `{ conversationId?, prompt }` streams NDJSON `ChatStreamEvent`s (`conversation`, the `AnswerEvent`s, then `answer` (with the stored `messageId`) or `error`). See `src/web/chat/wire.ts`.
 
 ## Pinned Queries and Saved Questions
 
 ADR 0001: a pinned Answer is re-run by executing its stored queries through the drivers and rebuilding its blocks from the fresh results. The LLM is never asked to answer again. Saved Questions (#17) use this, and Reports and KPIs should too.
 
-**Block → result mapping.** Every data block records the result it shows. A Table block has `resultId` (the `ExecutedQuery.resultId`), and its `columns` are the selected columns in order (`emitTable` takes an optional `columns` list). Answers stored before this have no `resultId`. Their tables can't be rebuilt and are left out when pinning. New data block types (charts) must carry `resultId` (or several) the same way.
+**Block → result mapping.** Every data block records the result it shows. A Table block has `resultId` (the `ExecutedQuery.resultId`), and its `columns` are the selected columns in order (`emitTable` takes an optional `columns` list). Answers stored before this have no `resultId`. Their tables can't be rebuilt and are left out when pinning. Chart blocks carry `resultId` and their `spec` the same way, and are redrawn from the fresh rows (their fields are checked again).
 
 **`core.pinnedQueries`** (`src/core/pinned-queries/pinned-queries.ts`) is stateless. Callers store the `PinnedAnswer` in their own documents.
 
 ```ts
 const pinned: PinnedAnswer = core.pinnedQueries.pin(answer);
 // { queries: PinnedQuery[] (successful ones only: resultId, dataSourceId, dataSourceName, language, query),
-//   layout: PinnedBlock[] ({ type: 'text', markdown } | { type: 'table', resultId, title?, columns: string[] }) }
+//   layout: PinnedBlock[] ({ type: 'text', markdown } | { type: 'table', resultId, title?, columns: string[] }
+//                          | { type: 'chart', resultId, title?, spec }) }
 // ValidationError if the Answer failed or no data block can be rebuilt.
 
 const run: PinnedRun = await core.pinnedQueries.run(pinned);

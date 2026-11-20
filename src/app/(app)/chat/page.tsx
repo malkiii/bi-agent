@@ -19,7 +19,12 @@ export default async function NewChatPage() {
       </header>
       <ChatView initialItems={[]} />
       <section className={styles.recent}>
-        <h2>Recent Conversations</h2>
+        <h2>
+          Recent Conversations{' '}
+          <Link href="/history" className={styles.seeAll}>
+            See all
+          </Link>
+        </h2>
         {recent.length === 0 ? (
           <p className={styles.muted}>None yet. Your Conversations will show up here.</p>
         ) : (
