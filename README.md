@@ -43,6 +43,9 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 | `UPLOADS_DIR` | web, worker | Where uploaded Datasets are stored as Parquet files. Default `/data/uploads` (the shared compose volume). |
 | `WEB_PORT` | compose | Host port for plain-http `web`. Default 3000. |
 | `SITE_ADDRESS` | compose (caddy) | Hostname for the `https` profile. |
+| `LLM_PROVIDER`, `LLM_MODEL` | web, worker | Default LLM: `anthropic`, `openai`, `google`, `openrouter`, `groq` or `ollama`, plus a model id of that provider. Unset = Answers fail with a friendly message. |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY` | web, worker | Provider keys. The key for `LLM_PROVIDER` is required; the others are kept for switching providers later. |
+| `OLLAMA_BASE_URL` | web, worker | Ollama API URL ending in `/api`. Default `http://localhost:11434/api` (from compose: `http://host.docker.internal:11434/api`). |
 
 Process config is parsed and validated in `src/server/config.ts`. Add new variables there and to `.env.example`.
 
@@ -77,8 +80,10 @@ src/
     preferences/   Per-user UI preferences (theme)
     data-sources/  driver.ts (the driver contract types), data-sources.ts (admin CRUD, test, introspect, Exposed Datasets, withDriver)
     uploads/       uploads.ts (preview/confirm/Replace/Append/delete of uploaded Datasets), storage.ts (the UploadStorage port)
+    conversations/ answer.ts (Answer + Result Block model, AnswerEvent), conversations.ts (startWeb, ask, get, list)
+    agent/         The agent loop: agent.ts (runAgent), tools.ts (toolkits), catalog.ts (what the agent may query), answer-draft.ts
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
-  adapters/        Production implementations of ports (system clock, ...)
+  adapters/        Production implementations of ports (system clock, llm.ts = the six LLM providers, ...)
   drivers/         Data Source drivers. index.ts = builtInDrivers registry
     contract/      describeDriverContract(): the shared suite every driver runs
     sql/           read-only-guard.ts: single SELECT/WITH check shared by SQL drivers
@@ -91,6 +96,7 @@ src/
   web/             Web-only code: auth helpers, server runtime, components
     botley/        Botley's state machine (machine.ts) and store (BotleyProvider.tsx)
     theme/         Light/dark theme: toggle, server action, per-user preference
+    chat/          Web chat: ChatView (prompt box + streamed Answers), AnswerView (blocks, sources, show query), wire.ts (NDJSON protocol)
   app/             Next.js App Router routes
     (app)/         Signed-in pages inside the app shell
     signin/        Public sign-in page
@@ -142,9 +148,25 @@ setBotleyState('error');                  // e.g. a failed tool call or request 
 - A form whose submit is slow can use `<PendingButton>` (`src/web/components/PendingButton.tsx`). It shows `thinking` while the form's server action runs. Sign-in and sign-out use it.
 - Empty lists (no Conversations, no Data Sources yet) render `<Botley rest="empty" />` next to the empty-state text.
 
-Events wired so far: idle by default, `thinking` while sign-in or sign-out is pending, `success` right after sign-in, `error` on the sign-in error, the forbidden page and the `error.tsx` boundaries, and `empty` on the 404 page. Chat (thinking/answering), Data Source tests and Reports should hook in as described above when they are built.
+Events wired so far: idle by default, `thinking` while sign-in or sign-out is pending, `success` right after sign-in, `error` on the sign-in error, the forbidden page and the `error.tsx` boundaries, `empty` on the 404 page, and in the web chat `thinking` from sending a Prompt until the Answer finishes (then settle, or `error` if it failed). Data Source tests and Reports should hook in as described above when they are built.
 
 The Slack avatar `public/botley-avatar.png` (1024 px) is rendered from `public/botley.svg`. After changing the SVG, re-render it with any SVG rasteriser, e.g. `@resvg/resvg-js`: `new Resvg(svg, { fitTo: { mode: 'width', value: 1024 } }).render().asPng()`.
+
+## Answering Prompts (agent loop)
+
+Every transport answers through one App Core use case, `core.conversations.ask(actor, conversationId, prompt, { onEvent })`. It stores the Prompt, runs the agent, stores the Answer and resolves with it. When the model or a tool crashes it never rejects: it resolves with `status: 'failed'` and a user-safe `error` (the cause goes to `AppCoreDeps.onAgentError`). It rejects only for access or input errors (`NotFoundError` when the actor isn't a Participant, `ValidationError` for an empty Prompt).
+
+- **Conversation model** (`src/core/conversations/conversations.ts`, Mongo `conversations` + `conversationMessages`): `source` is `{ kind: 'web' }` or `{ kind: 'slack', channel, threadTs }` (unique index on channel + thread). `participants` holds Slack user IDs; `get`/`list`/`ask` only work for Participants. Messages alternate `prompt` / `answer` in `seq` order. Earlier messages become model context through `summarize(answer)` (text, table shapes, executed queries). Slack (#5) adds a `findOrStartSlack`-style use case that adds the poster to `participants` before calling `ask`. Forks copy the messages into a new web Conversation.
+- **Answer model** (`src/core/conversations/answer.ts`): `blocks` (Result Blocks, a discriminated union on `type`; today `text` and `table`; `chart` and `file` get added there), `sources` (Data Sources and Dataset ids used, matched from the query text), `queries` (every executed query, failed ones too, with `resultId`, `language`, exact `query`, row count and the error; this powers "show query" and later Pinned Queries), `usage` and timing. Renderers must ignore block types they don't know. A Table block keeps at most `TABLE_BLOCK_MAX_ROWS` (1 000) rows and sets `truncated`, because the Answer is stored in one Mongo document.
+- **Events**: `onEvent` gets `progress` (a label such as "Querying Warehouse…"), `query` and `block` events while the agent works. The web streams them to the browser; Slack updates its placeholder message with the `progress` labels.
+- **The loop** (`src/core/agent/agent.ts`): AI SDK `streamText` with tools and `stopWhen: isStepCount(MAX_AGENT_STEPS)`. The model builds the Answer by calling emit tools. Plain text in its last step becomes a Text block too.
+- **Tools** come in toolkits (`src/core/agent/tools.ts`). A toolkit is `(ctx: { catalog, answer }) => { tools, instructions? }`, and `builtInToolkits` lists them: `catalogToolkit` (`listDatasets`, `describeDataset`), `queryToolkit` (`runQuery`) and `emitToolkit` (`emitText`, `emitTable`). To add `emitChart` or `combineResults`, write a toolkit that reads results with `answer.result(resultId)` and adds blocks with `answer.addBlock(...)`, then add it to `builtInToolkits`.
+- **runQuery** runs through the Data Source's driver (read-only enforcement stays in the driver). `QueryRejectedError`, `QueryFailedError` and `QueryTimeoutError` messages go back to the model as `{ ok: false, error, attemptsLeft }` so it can fix the query. After `MAX_FAILED_QUERIES` (4) failures in one Answer it stops running queries. The model sees 20 preview rows. The full result stays in the draft under its `resultId` for the emit tools. MongoDB sources take the query as a JSON string.
+- **Which Data Sources** (`src/core/agent/catalog.ts`): only Data Sources with Exposed Datasets, and only those Datasets. `createAgentCatalog(dataSources, { onlyDataSourceIds })` is where the Conversation lock (web) and Channel Default (Slack) plug in.
+- **LLM**: `LanguageModelProvider` (port) is built from `LLM_PROVIDER`/`LLM_MODEL` in `src/adapters/llm.ts`. `ServerConfig.llm.credentials` keeps every configured provider, ready for the admin provider switch.
+- **Tests** script the model with `h.llm.script(...)`. Each turn serves both `doGenerate` and `doStream`, and `h.llm.model.doStreamCalls[n].prompt` shows what the model received. See `src/core/conversations/conversations.test.ts` (real Postgres + Mongo).
+
+Web chat: `/chat` (new Conversation + recent list) and `/chat/[id]` (reopen). `POST /api/chat` `{ conversationId?, prompt }` streams NDJSON `ChatStreamEvent`s (`conversation`, the `AnswerEvent`s, then `answer` or `error`). See `src/web/chat/wire.ts`.
 
 ## Data Source drivers
 

@@ -14,6 +14,7 @@ test('worker connects to Mongo and logs readiness', async () => {
       mongoDb: `test_${randomUUID().replaceAll('-', '')}`,
       uploadsDir: path.join(tmpdir(), 'botley-worker-test-uploads'),
       core: { slackTeamId: 'T0TEAM', adminSlackUserIds: [], encryptionKey: 'a'.repeat(64) },
+      llm: null,
     },
     logger,
   });

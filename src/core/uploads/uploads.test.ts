@@ -94,6 +94,26 @@ describe('uploading a CSV', () => {
     ]);
   });
 
+  test('the agent answers a Prompt over an uploaded Dataset', async () => {
+    const preview = await h.core.uploads.preview(MEMBER, ORDERS_CSV);
+    await h.core.uploads.confirm(MEMBER, preview.id, [{ sheet: 0, mode: 'create', name: 'orders' }]);
+    const sql = "SELECT sum(amount) AS total FROM orders WHERE region = 'north'";
+    h.llm.script(
+      { toolCalls: [{ toolName: 'listDatasets', input: {} }] },
+      { toolCalls: [{ toolName: 'runQuery', input: { dataSourceId: UPLOADS_DATA_SOURCE_ID, query: sql, name: 'north' } }] },
+      { toolCalls: [{ toolName: 'emitTable', input: { resultId: 'north' } }] },
+      { text: '' },
+    );
+
+    const conversation = await h.core.conversations.startWeb(ADMIN);
+    const answer = await h.core.conversations.ask(ADMIN, conversation.id, 'How much did north sell?');
+
+    expect(answer.status).toBe('complete');
+    expect(answer.blocks).toMatchObject([{ type: 'table', rows: [[17.75]] }]);
+    expect(answer.sources).toEqual([{ dataSourceId: UPLOADS_DATA_SOURCE_ID, name: 'Uploads', datasets: ['orders'] }]);
+    expect(answer.queries).toMatchObject([{ language: 'sql', query: sql, ok: true, rowCount: 1 }]);
+  });
+
   test('a correction the values do not fit is refused, naming the column and value', async () => {
     const preview = await h.core.uploads.preview(MEMBER, ORDERS_CSV);
 

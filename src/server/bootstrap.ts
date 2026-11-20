@@ -4,6 +4,7 @@ import { systemClock } from '@/adapters/system-clock';
 import { builtInDrivers } from '@/drivers';
 import { createUploadStorage } from '@/drivers/uploads/storage';
 import { unconfiguredLlm, unconfiguredSlack } from '@/adapters/unconfigured';
+import { createLanguageModelProvider } from '@/adapters/llm';
 import type { ServerConfig } from './config';
 
 export interface Logger {
@@ -28,10 +29,11 @@ export async function bootstrap(config: ServerConfig): Promise<ServerRuntime> {
     db,
     clock: systemClock,
     slack: unconfiguredSlack,
-    llm: unconfiguredLlm,
+    llm: config.llm ? createLanguageModelProvider(config.llm) : unconfiguredLlm,
     drivers: builtInDrivers,
     uploads: createUploadStorage({ directory: config.uploadsDir }),
     config: config.core,
+    onAgentError: (error) => console.error('Answer failed:', error),
   });
   await core.uploads.ensureDataSource();
   return { core, db, client };

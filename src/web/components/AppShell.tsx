@@ -16,6 +16,7 @@ export function AppShell({ user, theme, children }: { user: User; theme: ThemePr
         </Link>
         <nav className={styles.nav}>
           <Link href="/">Home</Link>
+          <Link href="/chat">Chat</Link>
           <Link href="/uploads">Uploads</Link>
           {user.role === 'admin' && <Link href="/admin">Admin</Link>}
         </nav>

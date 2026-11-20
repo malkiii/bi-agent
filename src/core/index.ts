@@ -11,6 +11,7 @@ import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
 import type { UploadStorage } from './uploads/storage';
 import { createUploads, ensureUploadIndexes, type Uploads } from './uploads/uploads';
+import { createConversations, ensureConversationIndexes, type Conversations } from './conversations/conversations';
 
 export * from './errors';
 export type * from './ports';
@@ -40,6 +41,15 @@ export {
   type UploadStorage,
   type WrittenDataset,
 } from './uploads/storage';
+export * from './conversations/answer';
+export type {
+  AskOptions,
+  Conversation,
+  ConversationMessage,
+  ConversationSource,
+  ConversationWithMessages,
+} from './conversations/conversations';
+export type { AgentToolContext, AgentToolkit, AgentToolkitFactory } from './agent/tools';
 
 export interface AppCoreConfig {
   /** Only this Slack workspace may sign in. */
@@ -60,6 +70,8 @@ export interface AppCoreDeps {
   /** Where uploaded Datasets are stored; production passes `createUploadStorage` from `@/drivers/uploads/storage`. */
   uploads: UploadStorage;
   config: AppCoreConfig;
+  /** Called with the underlying error when an Answer fails (model or tool crash), for logging. */
+  onAgentError?: (error: unknown) => void;
 }
 
 export interface AppCore {
@@ -67,6 +79,7 @@ export interface AppCore {
   preferences: Preferences;
   dataSources: DataSources;
   uploads: Uploads;
+  conversations: Conversations;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
@@ -83,6 +96,13 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     preferences: createPreferences(deps),
     dataSources,
     uploads: createUploads({ db: deps.db, clock: deps.clock, users, dataSources, storage: deps.uploads }),
+    conversations: createConversations({
+      db: deps.db,
+      clock: deps.clock,
+      llm: deps.llm,
+      dataSources,
+      onAgentError: deps.onAgentError,
+    }),
   };
 }
 
@@ -92,4 +112,5 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensurePreferenceIndexes(db);
   await ensureDataSourceIndexes(db);
   await ensureUploadIndexes(db);
+  await ensureConversationIndexes(db);
 }
