@@ -74,8 +74,8 @@ export const queryToolkit: AgentToolkitFactory = ({ catalog, answer }) => ({
   tools: {
     runQuery: tool({
       description:
-        'Run one read-only query against a Data Source. SQL and SOQL sources take query text; MongoDB takes a JSON request ' +
-        '({"collection": "...", "find": {...}} or {"collection": "...", "aggregate": [...]}). Returns a resultId, the columns and a preview of the rows.',
+        'Run one read-only query against a Data Source, written as its dialect guidance says. SQL and SOQL sources take query text; ' +
+        'MongoDB sources take the JSON request as a string. Returns a resultId, the columns and a preview of the rows.',
       inputSchema: z.object({
         dataSourceId: z.string(),
         query: z.string(),
