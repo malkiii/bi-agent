@@ -22,6 +22,15 @@ export interface ServerConfig {
   core: AppCoreConfig;
   /** The default LLM provider and model; null when LLM_PROVIDER is unset (Answers then fail with a friendly error). */
   llm: LlmSettings | null;
+  /** Slack bot (worker Socket Mode, outbound messages); absent when SLACK_BOT_TOKEN is unset. */
+  slack?: SlackSettings;
+}
+
+export interface SlackSettings {
+  /** Bot token (`xoxb-…`) for the Web API. */
+  botToken: string;
+  /** App-level token (`xapp-…`, `connections:write`) for Socket Mode; only the worker needs it. */
+  appToken?: string;
 }
 
 export const DEFAULT_OLLAMA_BASE_URL = 'http://localhost:11434/api';
@@ -50,6 +59,8 @@ const schema = z
     OPENROUTER_API_KEY: optional,
     GROQ_API_KEY: optional,
     OLLAMA_BASE_URL: optional,
+    SLACK_BOT_TOKEN: optional.refine((v) => !v || v.startsWith('xoxb-'), 'SLACK_BOT_TOKEN must be a bot token (xoxb-…)'),
+    SLACK_APP_TOKEN: optional.refine((v) => !v || v.startsWith('xapp-'), 'SLACK_APP_TOKEN must be an app-level token (xapp-…)'),
   })
   .superRefine((e, ctx) => {
     if (!e.LLM_PROVIDER) return;
@@ -94,5 +105,6 @@ export function parseServerConfig(env: Record<string, string | undefined>): Serv
       encryptionKey: e.ENCRYPTION_KEY,
     },
     llm: llmSettings(e),
+    ...(e.SLACK_BOT_TOKEN && { slack: { botToken: e.SLACK_BOT_TOKEN, ...(e.SLACK_APP_TOKEN && { appToken: e.SLACK_APP_TOKEN }) } }),
   };
 }

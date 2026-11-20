@@ -10,6 +10,7 @@ import { createPreferences, ensurePreferenceIndexes, type Preferences } from './
 import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
 import { createConversations, ensureConversationIndexes, type Conversations } from './conversations/conversations';
+import { createSlackBot, ensureSlackBotIndexes, type SlackBot } from './slack/slack-bot';
 
 export * from './errors';
 export type * from './ports';
@@ -30,6 +31,8 @@ export type {
   ConversationSource,
   ConversationWithMessages,
 } from './conversations/conversations';
+export type { SlackBot, SlackPrompt } from './slack/slack-bot';
+export { SHOW_QUERY_ACTION_ID } from './slack/render';
 export type { AgentToolContext, AgentToolkit, AgentToolkitFactory } from './agent/tools';
 
 export interface AppCoreConfig {
@@ -58,6 +61,7 @@ export interface AppCore {
   preferences: Preferences;
   dataSources: DataSources;
   conversations: Conversations;
+  slackBot: SlackBot;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
@@ -69,17 +73,19 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     drivers: deps.drivers,
     secretBox: createSecretBox(deps.config.encryptionKey),
   });
+  const conversations = createConversations({
+    db: deps.db,
+    clock: deps.clock,
+    llm: deps.llm,
+    dataSources,
+    onAgentError: deps.onAgentError,
+  });
   return {
     users,
     preferences: createPreferences(deps),
     dataSources,
-    conversations: createConversations({
-      db: deps.db,
-      clock: deps.clock,
-      llm: deps.llm,
-      dataSources,
-      onAgentError: deps.onAgentError,
-    }),
+    conversations,
+    slackBot: createSlackBot({ db: deps.db, clock: deps.clock, slack: deps.slack, conversations, onError: deps.onAgentError }),
   };
 }
 
@@ -89,4 +95,5 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensurePreferenceIndexes(db);
   await ensureDataSourceIndexes(db);
   await ensureConversationIndexes(db);
+  await ensureSlackBotIndexes(db);
 }

@@ -10,10 +10,11 @@ export interface RecordedReaction extends SlackMessageRef {
   emoji: string;
 }
 
-/** Records everything the App Core sends to Slack. Assert on `messages` and `reactions`. */
+/** Records everything the App Core sends to Slack. Assert on `messages`, `reactions` and `modals`. */
 export class InMemorySlackGateway implements SlackGateway {
   readonly messages: RecordedMessage[] = [];
   readonly reactions: RecordedReaction[] = [];
+  readonly modals: { triggerId: string; view: unknown }[] = [];
   /** Channels the bot is a member of (DM channel IDs starting with "D" always count). */
   readonly botChannels = new Set<string>();
   private seq = 0;
@@ -37,6 +38,10 @@ export class InMemorySlackGateway implements SlackGateway {
 
   async isBotInChannel(channel: string): Promise<boolean> {
     return channel.startsWith('D') || this.botChannels.has(channel);
+  }
+
+  async openModal(triggerId: string, view: unknown): Promise<void> {
+    this.modals.push({ triggerId, view });
   }
 
   /** Messages posted in one thread (or top-level in a channel when threadTs is omitted). */

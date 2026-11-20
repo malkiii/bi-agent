@@ -28,6 +28,13 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 4. Under **Basic Information > Display Information**, upload `public/botley-avatar.png` as the app icon so the bot has Botley's face.
 5. Put the first admins' Slack user IDs (`U…`) in `ADMIN_SLACK_USER_IDS`. They become admins on their **first** sign-in, and everyone else becomes a member. Later changes to the list don't change existing users.
 
+### Slack app setup (bot)
+
+1. Under **Socket Mode**, enable it and create an app-level token with `connections:write`; put it in `SLACK_APP_TOKEN` (`xapp-…`).
+2. Under **OAuth & Permissions > Bot Token Scopes**, add `app_mentions:read`, `chat:write`, `reactions:write`, `im:history`, `channels:read`, `groups:read`, `im:read`. Install the app and put the Bot User OAuth Token in `SLACK_BOT_TOKEN` (`xoxb-…`).
+3. Under **Event Subscriptions**, subscribe to the bot events `app_mention` and `message.im` (not `message.channels`: thread chatter without a mention is ignored). Under **Interactivity & Shortcuts**, turn interactivity on (no URL needed in Socket Mode). Under **App Home**, enable the Messages tab and "Allow users to send messages".
+4. Invite the bot to channels (`/invite @Botley`). The worker logs `Slack connected in Socket Mode` when it is up.
+
 ## Environment variables
 
 | Variable | Used by | Notes |
@@ -37,6 +44,7 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 | `AUTH_URL` | web | The https URL people open. Compose sets `AUTH_TRUST_HOST=true`. |
 | `SLACK_TEAM_ID` | web, worker | The only workspace allowed to sign in. Required. |
 | `ADMIN_SLACK_USER_IDS` | web, worker | Comma-separated initial admins. |
+| `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` | worker (web: bot token only) | Slack bot. Optional; without them the worker runs without Slack. |
 | `ENCRYPTION_KEY` | web, worker | 32-byte key, base64 or hex (`openssl rand -base64 32`). Encrypts Data Source credentials (AES-256-GCM). Required; keep it stable, or saved credentials become unreadable. |
 | `MONGO_URL` | web, worker | Required outside compose. Compose always uses `mongodb://mongo:27017`. |
 | `MONGO_DB` | web, worker | Database name. Default `botley`. |
@@ -78,7 +86,8 @@ src/
     users/         Slack sign-in, roles (list, setRole), requireAdmin
     preferences/   Per-user UI preferences (theme)
     data-sources/  driver.ts (the driver contract types), data-sources.ts (admin CRUD, test, introspect, Exposed Datasets, withDriver)
-    conversations/ answer.ts (Answer + Result Block model, AnswerEvent), conversations.ts (startWeb, ask, get, list)
+    conversations/ answer.ts (Answer + Result Block model, AnswerEvent), conversations.ts (startWeb, findOrStartSlack, ask, get, list)
+    slack/         slack-bot.ts (handlePrompt, showQuery), render.ts (Answer -> Block Kit, pure)
     agent/         The agent loop: agent.ts (runAgent), tools.ts (toolkits), catalog.ts (what the agent may query), answer-draft.ts
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
   adapters/        Production implementations of ports (system clock, llm.ts = the six LLM providers, ...)
@@ -153,9 +162,10 @@ The Slack avatar `public/botley-avatar.png` (1024 px) is rendered from `public/b
 
 Every transport answers through one App Core use case, `core.conversations.ask(actor, conversationId, prompt, { onEvent })`. It stores the Prompt, runs the agent, stores the Answer and resolves with it. When the model or a tool crashes it never rejects: it resolves with `status: 'failed'` and a user-safe `error` (the cause goes to `AppCoreDeps.onAgentError`). It rejects only for access or input errors (`NotFoundError` when the actor isn't a Participant, `ValidationError` for an empty Prompt).
 
-- **Conversation model** (`src/core/conversations/conversations.ts`, Mongo `conversations` + `conversationMessages`): `source` is `{ kind: 'web' }` or `{ kind: 'slack', channel, threadTs }` (unique index on channel + thread). `participants` holds Slack user IDs; `get`/`list`/`ask` only work for Participants. Messages alternate `prompt` / `answer` in `seq` order. Earlier messages become model context through `summarize(answer)` (text, table shapes, executed queries). Slack (#5) adds a `findOrStartSlack`-style use case that adds the poster to `participants` before calling `ask`. Forks copy the messages into a new web Conversation.
+- **Conversation model** (`src/core/conversations/conversations.ts`, Mongo `conversations` + `conversationMessages`): `source` is `{ kind: 'web' }` or `{ kind: 'slack', channel, threadTs }` (unique index on channel + thread). `participants` holds Slack user IDs; `get`/`list`/`ask` only work for Participants. Messages alternate `prompt` / `answer` in `seq` order. Earlier messages become model context through `summarize(answer)` (text, table shapes, executed queries). Slack uses `findOrStartSlack(actor, { channel, threadTs })`, which upserts the thread's Conversation and adds the poster to `participants`, then `answerPrompt` (`ask` plus the stored Answer's message id). Forks copy the messages into a new web Conversation.
 - **Answer model** (`src/core/conversations/answer.ts`): `blocks` (Result Blocks, a discriminated union on `type`; today `text` and `table`; `chart` and `file` get added there), `sources` (Data Sources and Dataset ids used, matched from the query text), `queries` (every executed query, failed ones too, with `resultId`, `language`, exact `query`, row count and the error; this powers "show query" and later Pinned Queries), `usage` and timing. Renderers must ignore block types they don't know. A Table block keeps at most `TABLE_BLOCK_MAX_ROWS` (1 000) rows and sets `truncated`, because the Answer is stored in one Mongo document.
 - **Events**: `onEvent` gets `progress` (a label such as "Querying Warehouse…"), `query` and `block` events while the agent works. The web streams them to the browser; Slack updates its placeholder message with the `progress` labels.
+- **Slack** (`src/core/slack/`, ADR 0004): the worker's Bolt adapter (`src/worker/slack-app.ts`) turns `app_mention` and DM `message` events into `core.slackBot.handlePrompt(...)`. That use case ignores redelivered events (`slackEvents`, keyed by channel + ts, 24 h TTL), reacts 👀, posts a placeholder in the thread, edits it with each `progress` label, then edits in the rendered Answer (❌ plus the error on failure). `render.ts` is pure: `renderAnswer` (Text as mrkdwn sections; the first Table as a Block Kit table of up to `SLACK_INLINE_TABLE_ROWS` = 15 rows, later tables as monospaced text; sources footer; "Show query" button whose value is the Answer message id) and `renderQueryModal`. New Result Block kinds get a `case` in `renderAnswer`; uploads (chart PNG, files) need a new `SlackGateway` method. `SlackGateway` (port) is implemented by `src/adapters/slack-web-gateway.ts` and, in tests, `InMemorySlackGateway` (`messages`, `reactions`, `modals`).
 - **The loop** (`src/core/agent/agent.ts`): AI SDK `streamText` with tools and `stopWhen: isStepCount(MAX_AGENT_STEPS)`. The model builds the Answer by calling emit tools. Plain text in its last step becomes a Text block too.
 - **Tools** come in toolkits (`src/core/agent/tools.ts`). A toolkit is `(ctx: { catalog, answer }) => { tools, instructions? }`, and `builtInToolkits` lists them: `catalogToolkit` (`listDatasets`, `describeDataset`), `queryToolkit` (`runQuery`) and `emitToolkit` (`emitText`, `emitTable`). To add `emitChart` or `combineResults`, write a toolkit that reads results with `answer.result(resultId)` and adds blocks with `answer.addBlock(...)`, then add it to `builtInToolkits`.
 - **runQuery** runs through the Data Source's driver (read-only enforcement stays in the driver). `QueryRejectedError`, `QueryFailedError` and `QueryTimeoutError` messages go back to the model as `{ ok: false, error, attemptsLeft }` so it can fix the query. After `MAX_FAILED_QUERIES` (4) failures in one Answer it stops running queries. The model sees 20 preview rows. The full result stays in the draft under its `resultId` for the emit tools. MongoDB sources take the query as a JSON string.

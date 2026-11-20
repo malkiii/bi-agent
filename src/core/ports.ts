@@ -35,4 +35,6 @@ export interface SlackGateway {
   updateMessage(ref: SlackMessageRef, message: Omit<SlackMessage, 'channel' | 'threadTs'>): Promise<void>;
   addReaction(ref: SlackMessageRef, emoji: string): Promise<void>;
   isBotInChannel(channel: string): Promise<boolean>;
+  /** Opens a modal in response to an interaction (`triggerId` expires 3 s after the click). `view` is a Block Kit modal. */
+  openModal(triggerId: string, view: unknown): Promise<void>;
 }

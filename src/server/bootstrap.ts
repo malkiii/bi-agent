@@ -4,6 +4,8 @@ import { systemClock } from '@/adapters/system-clock';
 import { builtInDrivers } from '@/drivers';
 import { unconfiguredLlm, unconfiguredSlack } from '@/adapters/unconfigured';
 import { createLanguageModelProvider } from '@/adapters/llm';
+import { createSlackWebGateway } from '@/adapters/slack-web-gateway';
+import { WebClient } from '@slack/web-api';
 import type { ServerConfig } from './config';
 
 export interface Logger {
@@ -27,7 +29,7 @@ export async function bootstrap(config: ServerConfig): Promise<ServerRuntime> {
   const core = createAppCore({
     db,
     clock: systemClock,
-    slack: unconfiguredSlack,
+    slack: config.slack ? createSlackWebGateway(new WebClient(config.slack.botToken)) : unconfiguredSlack,
     llm: config.llm ? createLanguageModelProvider(config.llm) : unconfiguredLlm,
     drivers: builtInDrivers,
     config: config.core,

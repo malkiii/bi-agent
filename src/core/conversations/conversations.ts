@@ -52,6 +52,23 @@ export interface Conversations {
    * (never rejects) when the agent cannot finish; rejects on access or input errors.
    */
   ask(actorSlackUserId: string, conversationId: string, prompt: string, options?: AskOptions): Promise<Answer>;
+  /** Like `ask`, and also returns the id of the stored Answer message (Slack puts it in the "Show query" button). */
+  answerPrompt(
+    actorSlackUserId: string,
+    conversationId: string,
+    prompt: string,
+    options?: AskOptions,
+  ): Promise<{ answer: Answer; answerMessageId: string }>;
+  /**
+   * The Slack Conversation for this thread, created on first use. `actor` is added to
+   * `participants` (they are about to send a Prompt in it).
+   */
+  findOrStartSlack(actorSlackUserId: string, thread: { channel: string; threadTs: string }): Promise<Conversation>;
+  /**
+   * One stored Answer by its message id, without a Participant check: for Slack's
+   * "Show query" button, which only people who can see the Answer in Slack can press.
+   */
+  getAnswer(answerMessageId: string): Promise<Answer>;
   /** NotFoundError unless `actor` is a Participant. */
   get(actorSlackUserId: string, conversationId: string): Promise<ConversationWithMessages>;
   /** Conversations `actor` took part in that have at least one Prompt, most recent first. */
@@ -116,7 +133,7 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
     );
   }
 
-  return {
+  const api: Conversations = {
     async startWeb(actor) {
       const now = clock.now();
       const doc: ConversationDoc = {
@@ -133,7 +150,43 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
       return toConversation(doc);
     },
 
-    async ask(actor, conversationId, prompt, options = {}) {
+    async ask(actor, conversationId, prompt, options) {
+      return (await api.answerPrompt(actor, conversationId, prompt, options)).answer;
+    },
+
+    async findOrStartSlack(actor, { channel, threadTs }) {
+      const now = clock.now();
+      const filter = { 'source.kind': 'slack', 'source.channel': channel, 'source.threadTs': threadTs } as const;
+      const update = {
+        $addToSet: { participants: actor },
+        $setOnInsert: {
+          _id: randomUUID(),
+          source: { kind: 'slack' as const, channel, threadTs },
+          title: '',
+          messageCount: 0,
+          createdBy: actor,
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+      try {
+        const doc = await conversations.findOneAndUpdate(filter, update, { upsert: true, returnDocument: 'after' });
+        return toConversation(doc!);
+      } catch (error) {
+        // Two first Prompts in the same thread raced on the unique index: the other one created it.
+        if ((error as { code?: number }).code !== 11000) throw error;
+        const doc = await conversations.findOneAndUpdate(filter, { $addToSet: { participants: actor } }, { returnDocument: 'after' });
+        return toConversation(doc!);
+      }
+    },
+
+    async getAnswer(answerMessageId) {
+      const doc = await messages.findOne({ _id: answerMessageId, kind: 'answer' });
+      if (!doc || doc.kind !== 'answer') throw new NotFoundError('Answer not found.');
+      return doc.answer;
+    },
+
+    async answerPrompt(actor, conversationId, prompt, options = {}) {
       const text = prompt.trim();
       if (!text) throw new ValidationError('Write a Prompt first.', { prompt: 'Required' });
       if (text.length > MAX_PROMPT_LENGTH) {
@@ -162,8 +215,8 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
         onError: onAgentError,
         toolkits,
       });
-      await append(conversation._id, { kind: 'answer', promptId: promptDoc._id, answer, createdAt: clock.now() });
-      return answer;
+      const stored = await append(conversation._id, { kind: 'answer', promptId: promptDoc._id, answer, createdAt: clock.now() });
+      return { answer, answerMessageId: stored._id };
     },
 
     async get(actor, id) {
@@ -181,6 +234,7 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
       return docs.map(toConversation);
     },
   };
+  return api;
 }
 
 function toConversation(doc: ConversationDoc): Conversation {

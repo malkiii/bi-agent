@@ -24,6 +24,8 @@
     "@ai-sdk/groq": "^4.0.85",
     "@ai-sdk/openai": "^4.0.121",
     "@openrouter/ai-sdk-provider": "^3.1.0",
+    "@slack/bolt": "^5.1.0",
+    "@slack/web-api": "^8.5.0",
     "ai": "^7.0.177",
     "mongodb": "^7.9.1",
     "next": "^16.4.6",
