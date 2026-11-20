@@ -104,6 +104,12 @@ export interface DriverField {
 export interface DriverKind<TConfig = Record<string, unknown>, TSecrets = Record<string, string>> {
   kind: string;
   label: string;
+  /**
+   * Created and kept up to date by the App Core rather than the admin form (the built-in Uploads
+   * Data Source). Hidden from "Add", and admins cannot edit or delete it; they can still refresh
+   * its schema and choose its Exposed Datasets.
+   */
+  managed?: boolean;
   fields: readonly DriverField[];
   configSchema: z.ZodType<TConfig>;
   secretsSchema: z.ZodType<TSecrets>;

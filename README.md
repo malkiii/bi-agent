@@ -40,6 +40,7 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 | `ENCRYPTION_KEY` | web, worker | 32-byte key, base64 or hex (`openssl rand -base64 32`). Encrypts Data Source credentials (AES-256-GCM). Required; keep it stable, or saved credentials become unreadable. |
 | `MONGO_URL` | web, worker | Required outside compose. Compose always uses `mongodb://mongo:27017`. |
 | `MONGO_DB` | web, worker | Database name. Default `botley`. |
+| `UPLOADS_DIR` | web, worker | Where uploaded Datasets are stored as Parquet files. Default `/data/uploads` (the shared compose volume). |
 | `WEB_PORT` | compose | Host port for plain-http `web`. Default 3000. |
 | `SITE_ADDRESS` | compose (caddy) | Hostname for the `https` profile. |
 
@@ -75,12 +76,14 @@ src/
     users/         Slack sign-in, roles (list, setRole), requireAdmin
     preferences/   Per-user UI preferences (theme)
     data-sources/  driver.ts (the driver contract types), data-sources.ts (admin CRUD, test, introspect, Exposed Datasets, withDriver)
+    uploads/       uploads.ts (preview/confirm/Replace/Append/delete of uploaded Datasets), storage.ts (the UploadStorage port)
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
   adapters/        Production implementations of ports (system clock, ...)
   drivers/         Data Source drivers. index.ts = builtInDrivers registry
     contract/      describeDriverContract(): the shared suite every driver runs
     sql/           read-only-guard.ts: single SELECT/WITH check shared by SQL drivers
     postgres/      postgres.ts (driver + kind), testing.ts (per-test databases), postgres.test.ts
+    uploads/       uploads.ts (DuckDB driver + managed kind), storage.ts (CSV/XLSX -> Parquet UploadStorage), testing.ts
   server/          Process wiring shared by web and worker: env config, bootstrap()
   worker/          Worker process: main.ts (entry), worker.ts (startWorker)
   web/             Web-only code: auth helpers, server runtime, components
@@ -173,3 +176,15 @@ A `DriverKind` registers a driver with the App Core. It has `kind`, `label`, `fi
 
    Add tests for anything kind-specific (views, type mapping, quoting) in the same file.
 4. Register the kind in `builtInDrivers` (`src/drivers/index.ts`). The admin UI ("Add <label>") and the App Core pick it up from there.
+
+A kind with `managed: true` is created by the App Core instead of the admin form: it is hidden from "Add", and `dataSources.create/update/delete` refuse it. Admins can still refresh its schema and choose its Exposed Datasets.
+
+### Uploads
+
+Uploads is a managed kind (ADR 0003). There is exactly one Uploads Data Source, id `uploads` (`UPLOADS_DATA_SOURCE_ID`), created at startup by `core.uploads.ensureDataSource()` with `config.directory = UPLOADS_DIR`.
+
+- **Flow:** `core.uploads.preview(user, { name, bytes })` checks the 50 MB limit, parses the CSV/XLSX (first row = header; one sheet per XLSX worksheet), stages every sheet and infers column types (`string | integer | number | boolean | date | datetime`). `core.uploads.confirm(user, previewId, choices)` takes per sheet `create` (with a name and corrected types), `replace` or `append` into an existing Dataset. All choices are checked before anything is written. Any signed-in user can upload, Replace and Append; only admins can `delete`. New Datasets are exposed automatically, and earlier exposure choices are kept.
+- **Storage:** `UploadStorage` (`src/core/uploads/storage.ts`) is a port. The production adapter, `createUploadStorage` in `src/drivers/uploads/storage.ts`, writes `<UPLOADS_DIR>/<datasetId>.parquet` through DuckDB. It writes to a `.tmp-*` file and renames it into place, so Replace and Append are atomic. Staged sheets live in `.staging/<previewId>/` until they are confirmed, or until they expire after 24 h.
+- **Dataset ids** are SQL identifiers made from the name (`Q1 Sales` becomes `q1_sales`). The Dataset metadata (name, source file, sheet, columns, row count, who uploaded it) is in the `uploadedDatasets` collection.
+- **Querying:** each `execute` opens a fresh in-memory DuckDB with one view per Parquet file, locks it to the uploads directory (`allowed_directories`, `enable_external_access = false`, `lock_configuration = true`) after the `duckdb` read-only guard has run, and interrupts the query at the timeout.
+- **Web:** `/uploads` (the page and `UploadWizard`), with `POST /api/uploads/preview` (multipart) and `POST /api/uploads/confirm` (JSON). `next.config.ts` raises `proxyClientMaxBodySize` to 52 MB and keeps `@duckdb/node-api` external.

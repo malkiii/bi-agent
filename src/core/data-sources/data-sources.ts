@@ -65,6 +65,14 @@ export interface DataSources {
   withDriver<T>(id: string, work: (driver: DataSourceDriver) => Promise<T>): Promise<T>;
 }
 
+/** App Core-only operations, used by modules that manage a Data Source themselves (Uploads). */
+export interface DataSourcesInternal extends DataSources {
+  /** Creates a managed Data Source with a fixed id if missing; keeps its config current. */
+  ensureManaged(input: { id: string; name: string; kind: string; config: Record<string, unknown> }): Promise<DataSourceView>;
+  /** Introspects and stores the Datasets, keeping exposure choices and exposing `expose` ids. */
+  syncSchema(id: string, actorSlackUserId: string, expose: readonly string[]): Promise<DataSourceView>;
+}
+
 interface DataSourceDoc {
   _id: string;
   name: string;
@@ -87,7 +95,7 @@ interface Deps {
   secretBox: SecretBox;
 }
 
-export function createDataSources({ db, clock, users, drivers, secretBox }: Deps): DataSources {
+export function createDataSources({ db, clock, users, drivers, secretBox }: Deps): DataSourcesInternal {
   const collection = db.collection<DataSourceDoc>('dataSources');
 
   function kindOf(kind: string): AnyDriverKind {
@@ -160,6 +168,23 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
     }
   }
 
+  function refuseManaged(kind: AnyDriverKind): void {
+    if (kind.managed) {
+      throw new ValidationError(`The ${kind.label} Data Source is built in; it cannot be added, edited or deleted here.`);
+    }
+  }
+
+  async function syncSchema(id: string, actor: string, expose: readonly string[]): Promise<DataSourceView> {
+    const doc = await load(id);
+    const introspected = await withDriverFor(kindOf(doc.kind), doc.config, openSecrets(doc), (driver) =>
+      driver.introspect(),
+    );
+    const exposed = new Set([...doc.datasets.filter((d) => d.exposed).map((d) => d.id), ...expose]);
+    const datasets = introspected.map((d) => ({ ...d, exposed: exposed.has(d.id) }));
+    const now = clock.now();
+    return save(id, { datasets, schemaRefreshedAt: now, updatedAt: now, updatedBy: actor });
+  }
+
   async function save(id: string, update: Partial<DataSourceDoc>): Promise<DataSourceView> {
     try {
       const doc = await collection.findOneAndUpdate({ _id: id }, { $set: update }, { returnDocument: 'after' });
@@ -183,6 +208,7 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
     async create(actor, input) {
       await users.requireAdmin(actor);
       const { name, kind, config, secrets } = validate(input);
+      refuseManaged(kind);
       const now = clock.now();
       const doc: DataSourceDoc = {
         _id: randomUUID(),
@@ -208,6 +234,7 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
     async update(actor, id, input) {
       await users.requireAdmin(actor);
       const existing = await load(id);
+      refuseManaged(kindOf(existing.kind));
       if (input.kind !== existing.kind) {
         throw new ValidationError('The kind of a Data Source cannot change.', { kind: 'Cannot change' });
       }
@@ -223,6 +250,8 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
 
     async delete(actor, id) {
       await users.requireAdmin(actor);
+      const existing = await load(id);
+      if (drivers[existing.kind]) refuseManaged(kindOf(existing.kind));
       const { deletedCount } = await collection.deleteOne({ _id: id });
       if (deletedCount === 0) throw new NotFoundError('Data Source not found.');
     },
@@ -236,14 +265,7 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
 
     async refreshSchema(actor, id) {
       await users.requireAdmin(actor);
-      const doc = await load(id);
-      const introspected = await withDriverFor(kindOf(doc.kind), doc.config, openSecrets(doc), (driver) =>
-        driver.introspect(),
-      );
-      const wasExposed = new Set(doc.datasets.filter((d) => d.exposed).map((d) => d.id));
-      const datasets = introspected.map((d) => ({ ...d, exposed: wasExposed.has(d.id) }));
-      const now = clock.now();
-      return save(id, { datasets, schemaRefreshedAt: now, updatedAt: now, updatedBy: actor });
+      return syncSchema(id, actor, []);
     },
 
     async setExposedDatasets(actor, id, datasetIds) {
@@ -257,6 +279,40 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
       const chosen = new Set(datasetIds);
       const datasets = doc.datasets.map((d) => ({ ...d, exposed: chosen.has(d.id) }));
       return save(id, { datasets, updatedAt: clock.now(), updatedBy: actor });
+    },
+
+    syncSchema,
+
+    async ensureManaged({ id, name, kind, config }) {
+      kindOf(kind);
+      const now = clock.now();
+      const insert = (displayName: string) =>
+        collection.updateOne(
+          { _id: id },
+          {
+            $set: { config },
+            $setOnInsert: {
+              name: displayName,
+              kind,
+              sealedSecrets: secretBox.seal('{}'),
+              datasets: [],
+              schemaRefreshedAt: null,
+              createdAt: now,
+              createdBy: 'system',
+              updatedAt: now,
+              updatedBy: 'system',
+            },
+          },
+          { upsert: true },
+        );
+      try {
+        await insert(name);
+      } catch (error) {
+        // An admin already named another Data Source like this one.
+        if (!(error instanceof MongoServerError && error.code === 11000)) throw error;
+        await insert(`${name} (built in)`);
+      }
+      return toView(await load(id));
     },
 
     async withDriver(id, work) {

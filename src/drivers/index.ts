@@ -4,7 +4,9 @@
  */
 import type { DriverRegistry } from '@/core/data-sources/driver';
 import { postgresKind } from './postgres/postgres';
+import { uploadsKind } from './uploads/uploads';
 
 export const builtInDrivers: DriverRegistry = {
   [postgresKind.kind]: postgresKind,
+  [uploadsKind.kind]: uploadsKind,
 };

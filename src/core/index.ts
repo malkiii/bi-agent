@@ -9,6 +9,8 @@ import type { Clock, LanguageModelProvider, SlackGateway } from './ports';
 import { createPreferences, ensurePreferenceIndexes, type Preferences } from './preferences/preferences';
 import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
+import type { UploadStorage } from './uploads/storage';
+import { createUploads, ensureUploadIndexes, type Uploads } from './uploads/uploads';
 
 export * from './errors';
 export type * from './ports';
@@ -21,6 +23,23 @@ export type {
   DataSourceView,
 } from './data-sources/data-sources';
 export * from './data-sources/driver';
+export {
+  MAX_UPLOAD_BYTES,
+  UPLOADS_DATA_SOURCE_ID,
+  type UploadChoice,
+  type UploadedDataset,
+  type UploadPreview,
+} from './uploads/uploads';
+export {
+  UPLOAD_COLUMN_TYPES,
+  UploadConversionError,
+  UploadFormatError,
+  type StagedColumn,
+  type StagedSheet,
+  type UploadColumnType,
+  type UploadStorage,
+  type WrittenDataset,
+} from './uploads/storage';
 
 export interface AppCoreConfig {
   /** Only this Slack workspace may sign in. */
@@ -38,6 +57,8 @@ export interface AppCoreDeps {
   llm: LanguageModelProvider;
   /** The Data Source kinds; production passes `builtInDrivers` from `@/drivers`. */
   drivers: DriverRegistry;
+  /** Where uploaded Datasets are stored; production passes `createUploadStorage` from `@/drivers/uploads/storage`. */
+  uploads: UploadStorage;
   config: AppCoreConfig;
 }
 
@@ -45,20 +66,23 @@ export interface AppCore {
   users: Users;
   preferences: Preferences;
   dataSources: DataSources;
+  uploads: Uploads;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
   const users = createUsers(deps);
+  const dataSources = createDataSources({
+    db: deps.db,
+    clock: deps.clock,
+    users,
+    drivers: deps.drivers,
+    secretBox: createSecretBox(deps.config.encryptionKey),
+  });
   return {
     users,
     preferences: createPreferences(deps),
-    dataSources: createDataSources({
-      db: deps.db,
-      clock: deps.clock,
-      users,
-      drivers: deps.drivers,
-      secretBox: createSecretBox(deps.config.encryptionKey),
-    }),
+    dataSources,
+    uploads: createUploads({ db: deps.db, clock: deps.clock, users, dataSources, storage: deps.uploads }),
   };
 }
 
@@ -67,4 +91,5 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensureUserIndexes(db);
   await ensurePreferenceIndexes(db);
   await ensureDataSourceIndexes(db);
+  await ensureUploadIndexes(db);
 }

@@ -12,6 +12,9 @@
  * database (dropped on close), so test files can run in parallel.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { MongoClient, type Db } from 'mongodb';
 import { inject } from 'vitest';
 import { createAppCore, prepareDatabase, type AppCore, type AppCoreConfig } from '../index';
@@ -19,6 +22,7 @@ import { FakeClock } from './fake-clock';
 import { InMemorySlackGateway } from './in-memory-slack';
 import { MockLlm } from './mock-llm';
 import { builtInDrivers } from '@/drivers';
+import { createUploadStorage } from '@/drivers/uploads/storage';
 import type { DriverRegistry } from '../data-sources/driver';
 
 export { FakeClock } from './fake-clock';
@@ -32,6 +36,8 @@ export interface TestHarness {
   slack: InMemorySlackGateway;
   llm: MockLlm;
   config: AppCoreConfig;
+  /** The harness's own uploads directory (removed on close). */
+  uploadsDir: string;
   close(): Promise<void>;
 }
 
@@ -59,7 +65,10 @@ export async function createTestHarness(options: TestHarnessOptions = {}): Promi
   const slack = new InMemorySlackGateway();
   const llm = new MockLlm();
   const config = { ...DEFAULT_TEST_CONFIG, ...options.config };
-  const core = createAppCore({ db, clock, slack, llm, drivers: options.drivers ?? builtInDrivers, config });
+  const uploadsDir = await mkdtemp(path.join(tmpdir(), 'botley-test-uploads-'));
+  const uploads = createUploadStorage({ directory: uploadsDir });
+  const drivers = options.drivers ?? builtInDrivers;
+  const core = createAppCore({ db, clock, slack, llm, drivers, uploads, config });
 
   return {
     core,
@@ -68,9 +77,11 @@ export async function createTestHarness(options: TestHarnessOptions = {}): Promi
     slack,
     llm,
     config,
+    uploadsDir,
     async close() {
       await db.dropDatabase();
       await client.close();
+      await rm(uploadsDir, { recursive: true, force: true });
     },
   };
 }

@@ -49,7 +49,12 @@ export default async function DataSourcePage({
 
       <section className="card">
         <h1>{ds.name}</h1>
-        {kind ? (
+        {kind?.managed ? (
+          <p className={styles.muted}>
+            Built in. Members add Datasets here by uploading files on the <Link href="/uploads">Uploads</Link> page,
+            where admins can also delete them. Choose below which ones Botley may use.
+          </p>
+        ) : kind ? (
           <DataSourceForm
             kind={{ kind: kind.kind, label: kind.label, fields: kind.fields }}
             existing={{ id: ds.id, name: ds.name, config: ds.config, secrets: ds.secrets }}
@@ -100,6 +105,7 @@ export default async function DataSourcePage({
         )}
       </section>
 
+      {!kind?.managed && (
       <section className="card">
         <h2>Delete</h2>
         <p className={styles.muted}>Botley will stop using this Data Source. This cannot be undone.</p>
@@ -110,6 +116,7 @@ export default async function DataSourcePage({
           </button>
         </form>
       </section>
+      )}
     </div>
   );
 }

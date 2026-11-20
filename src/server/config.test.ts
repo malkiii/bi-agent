@@ -9,6 +9,7 @@ describe('server config from environment', () => {
     expect(parseServerConfig(minimal)).toEqual({
       mongoUrl: 'mongodb://mongo:27017',
       mongoDb: 'botley',
+      uploadsDir: '/data/uploads',
       core: { slackTeamId: 'T0TEAM', adminSlackUserIds: [], encryptionKey: KEY },
     });
   });
@@ -17,6 +18,10 @@ describe('server config from environment', () => {
     const config = parseServerConfig({ ...minimal, ADMIN_SLACK_USER_IDS: ' U1, U2 ,,U3 ' });
 
     expect(config.core.adminSlackUserIds).toEqual(['U1', 'U2', 'U3']);
+  });
+
+  test('UPLOADS_DIR moves the uploads directory', () => {
+    expect(parseServerConfig({ ...minimal, UPLOADS_DIR: '/srv/uploads' }).uploadsDir).toBe('/srv/uploads');
   });
 
   test('names every missing variable', () => {

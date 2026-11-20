@@ -2,6 +2,7 @@ import { MongoClient, type Db } from 'mongodb';
 import { createAppCore, prepareDatabase, type AppCore } from '@/core';
 import { systemClock } from '@/adapters/system-clock';
 import { builtInDrivers } from '@/drivers';
+import { createUploadStorage } from '@/drivers/uploads/storage';
 import { unconfiguredLlm, unconfiguredSlack } from '@/adapters/unconfigured';
 import type { ServerConfig } from './config';
 
@@ -29,7 +30,9 @@ export async function bootstrap(config: ServerConfig): Promise<ServerRuntime> {
     slack: unconfiguredSlack,
     llm: unconfiguredLlm,
     drivers: builtInDrivers,
+    uploads: createUploadStorage({ directory: config.uploadsDir }),
     config: config.core,
   });
+  await core.uploads.ensureDataSource();
   return { core, db, client };
 }

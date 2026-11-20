@@ -13,7 +13,7 @@ export default async function DataSourcesPage() {
       <header className={styles.header}>
         <h1>Data Sources</h1>
         <div className={styles.row}>
-          {Object.values(builtInDrivers).map((k) => (
+          {Object.values(builtInDrivers).filter((k) => !k.managed).map((k) => (
             <Link key={k.kind} href={`/admin/data-sources/new?kind=${k.kind}`} className="btn">
               Add {k.label}
             </Link>
