@@ -25,7 +25,8 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 1. Create a Slack app in your workspace. Under **OAuth & Permissions**, add the redirect URL `$AUTH_URL/api/auth/callback/slack`. Under **User Token Scopes**, add `openid`, `email` and `profile`.
 2. Copy the Client ID and Client Secret into `AUTH_SLACK_ID` and `AUTH_SLACK_SECRET`.
 3. Set `SLACK_TEAM_ID` to your workspace ID (`T…`). Sign-in from any other workspace is refused.
-4. Put the first admins' Slack user IDs (`U…`) in `ADMIN_SLACK_USER_IDS`. They become admins on their **first** sign-in, and everyone else becomes a member. Later changes to the list don't change existing users.
+4. Under **Basic Information > Display Information**, upload `public/botley-avatar.png` as the app icon so the bot has Botley's face.
+5. Put the first admins' Slack user IDs (`U…`) in `ADMIN_SLACK_USER_IDS`. They become admins on their **first** sign-in, and everyone else becomes a member. Later changes to the list don't change existing users.
 
 ## Environment variables
 
@@ -70,11 +71,14 @@ src/
     ports.ts       Clock, SlackGateway, LanguageModelProvider
     errors.ts      AppError subclasses (WrongWorkspaceError, ForbiddenError, NotFoundError)
     users/         Slack sign-in, roles, requireAdmin
+    preferences/   Per-user UI preferences (theme)
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
   adapters/        Production implementations of ports (system clock, ...)
   server/          Process wiring shared by web and worker: env config, bootstrap()
   worker/          Worker process: main.ts (entry), worker.ts (startWorker)
   web/             Web-only code: auth helpers, server runtime, components
+    botley/        Botley's state machine (machine.ts) and store (BotleyProvider.tsx)
+    theme/         Light/dark theme: toggle, server action, per-user preference
   app/             Next.js App Router routes
     (app)/         Signed-in pages inside the app shell
     signin/        Public sign-in page
@@ -99,4 +103,33 @@ test/global-setup.ts   Starts MongoDB once per test run
   ```
 
   Each harness gets its own database, so test files run in parallel. All `*.test.ts` files under `src/` and `test/` run in `npm test`.
-- **Theme:** neubrutalist tokens are CSS variables in `src/app/globals.css`, with shared `.card`, `.btn` and `.tag` classes. Components use the tokens, never raw colours. Botley is `src/web/components/Botley.tsx`.
+- **Theme:** neubrutalist tokens are CSS variables in `src/app/globals.css`, with shared `.card`, `.btn`, `.tag`, `.actions` and `.page-narrow` classes. Components use the tokens, never raw colours. Text on an accent fill (yellow, pink, cyan, lime, danger) uses `--color-on-accent`, which stays dark in both themes. Check every new page in dark mode.
+- **Dark mode:** the root layout sets `<html data-theme="light|dark">` from the user's saved preference (`core.preferences`, Mongo collection `userPreferences`). Without it (`system`, or signed out) the `prefers-color-scheme` media query decides. Dark token values live in two identical blocks in `globals.css`; change both. The header toggle (`src/web/theme/ThemeToggle.tsx`) applies the change at once and saves it with a server action.
+
+### Botley
+
+`<Botley />` (`src/web/components/Botley.tsx`) is an animated SVG with six states: `idle`, `thinking`, `success`, `error`, `empty`, `sleeping`. Animations are CSS in `Botley.module.css`, and all of them stop under `prefers-reduced-motion` (each face still reads without motion). Botley's mood comes from one store per page, `BotleyProvider`, which is mounted in the root layout. Its rules live in `src/web/botley/machine.ts` and are unit tested:
+
+- **Rest** is the page's resting mood. It is `idle` unless the page declares something else: `<Botley rest="empty" />` on an empty page, `<Botley rest="error" />` on an error page. Pages without a `rest` prop go back to `idle`. From a server component that renders Botley somewhere else, use `<BotleyRest state="empty" />`.
+- **Cues** are temporary moods caused by events, and they win over rest. `success` flashes for 2.5 s and `error` for 4 s, then Botley returns to rest. `thinking` (and every other state) lasts until settled. Pass `{ forMs }` to choose a duration (`null` means until settled).
+- **Sleeping** happens on its own: an idle Botley with no pointer, keyboard, scroll or focus activity for 2 minutes falls asleep, and any activity wakes it.
+- `<Botley state="..." />` pins a mood that events can't change. Avoid it on real pages.
+
+How a feature drives Botley from a client component:
+
+```tsx
+const { setBotleyState, settleBotley } = useBotley();   // from '@/web/botley/BotleyProvider'
+
+setBotleyState('thinking');               // e.g. Prompt sent, waiting for the agent (chat status 'submitted')
+settleBotley();                           // first Answer token arrived / stream finished
+setBotleyState('success');                // e.g. Data Source test passed, Report saved (flashes, then back to rest)
+setBotleyState('error');                  // e.g. a failed tool call or request (flashes, then back to rest)
+```
+
+- From a server component, fire a one-off cue with `<BotleyCue state="success" />` (the home page uses it right after sign-in).
+- A form whose submit is slow can use `<PendingButton>` (`src/web/components/PendingButton.tsx`). It shows `thinking` while the form's server action runs. Sign-in and sign-out use it.
+- Empty lists (no Conversations, no Data Sources yet) render `<Botley rest="empty" />` next to the empty-state text.
+
+Events wired so far: idle by default, `thinking` while sign-in or sign-out is pending, `success` right after sign-in, `error` on the sign-in error, the forbidden page and the `error.tsx` boundaries, and `empty` on the admin placeholder and the 404 page. Chat (thinking/answering), Data Source tests and Reports should hook in as described above when they are built.
+
+The Slack avatar `public/botley-avatar.png` (1024 px) is rendered from `public/botley.svg`. After changing the SVG, re-render it with any SVG rasteriser, e.g. `@resvg/resvg-js`: `new Resvg(svg, { fitTo: { mode: 'width', value: 1024 } }).render().asPng()`.

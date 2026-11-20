@@ -18,7 +18,7 @@
   margin: 0;
   padding: var(--space-2) var(--space-3);
   background: var(--color-danger);
-  color: #111111;
+  color: var(--color-on-accent);
   border: var(--border);
   font-weight: 700;
 }

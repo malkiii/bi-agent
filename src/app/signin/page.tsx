@@ -1,5 +1,6 @@
 import { signIn } from '@/auth';
 import { Botley } from '@/web/components/Botley';
+import { PendingButton } from '@/web/components/PendingButton';
 import styles from './signin.module.css';
 
 const ERRORS: Record<string, string> = {
@@ -16,7 +17,7 @@ export default async function SignInPage({
   return (
     <main className={styles.page}>
       <div className={`card ${styles.panel}`}>
-        <Botley state="idle" size={120} />
+        <Botley rest={error ? 'error' : 'idle'} size={120} />
         <h1>Sign in to Botley</h1>
         {error && (
           <p role="alert" className={styles.error}>
@@ -29,9 +30,7 @@ export default async function SignInPage({
             await signIn('slack', { redirectTo });
           }}
         >
-          <button type="submit" className="btn">
-            Sign in with Slack
-          </button>
+          <PendingButton>Sign in with Slack</PendingButton>
         </form>
       </div>
     </main>

@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { signOut } from '@/auth';
-import type { User } from '@/core';
+import type { ThemePreference, User } from '@/core';
+import { ThemeToggle } from '@/web/theme/ThemeToggle';
+import { PendingButton } from './PendingButton';
 import styles from './AppShell.module.css';
 
 /** The signed-in frame: header with navigation and the user menu, then the page. */
-export function AppShell({ user, children }: { user: User; children: ReactNode }) {
+export function AppShell({ user, theme, children }: { user: User; theme: ThemePreference; children: ReactNode }) {
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
@@ -17,6 +19,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
           {user.role === 'admin' && <Link href="/admin">Admin</Link>}
         </nav>
         <div className={styles.user}>
+          <ThemeToggle initial={theme} />
           <span>{user.name}</span>
           <span className="tag">{user.role}</span>
           <form
@@ -25,9 +28,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
               await signOut({ redirectTo: '/signin' });
             }}
           >
-            <button type="submit" className="btn btn--ghost">
-              Sign out
-            </button>
+            <PendingButton className="btn btn--ghost">Sign out</PendingButton>
           </form>
         </div>
       </header>

@@ -5,7 +5,7 @@ import { Botley } from '@/web/components/Botley';
 export default function ForbiddenPage() {
   return (
     <section className="card">
-      <Botley state="error" size={96} />
+      <Botley rest="error" size={96} />
       <h1>Admins only</h1>
       <p>This page is for admins. Ask an admin if you need access.</p>
       <Link href="/" className="btn">

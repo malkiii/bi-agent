@@ -1,10 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
+  <!-- Botley's face: the Slack app avatar (botley-avatar.png is rendered from this file, see README). -->
   <rect width="160" height="160" fill="#3fd5ff"/>
-  <line x1="80" y1="18" x2="80" y2="38" stroke="#111" stroke-width="4"/>
-  <circle cx="80" cy="16" r="8" fill="#ff6b9d" stroke="#111" stroke-width="3"/>
-  <rect x="28" y="38" width="104" height="84" rx="14" fill="#ffd23f" stroke="#111" stroke-width="4"/>
-  <rect x="42" y="54" width="76" height="44" rx="8" fill="#fff" stroke="#111" stroke-width="3"/>
-  <rect x="58" y="66" width="10" height="16" rx="5" fill="#111"/>
-  <rect x="92" y="66" width="10" height="16" rx="5" fill="#111"/>
-  <path d="M68 108 Q80 116 92 108" fill="none" stroke="#111" stroke-width="4" stroke-linecap="round"/>
+  <g transform="translate(0 14)">
+    <line x1="80" y1="14" x2="80" y2="34" stroke="#111" stroke-width="4"/>
+    <circle cx="80" cy="12" r="8" fill="#ff6b9d" stroke="#111" stroke-width="3"/>
+    <rect x="28" y="34" width="104" height="84" rx="14" fill="#ffd23f" stroke="#111" stroke-width="4"/>
+    <rect x="42" y="50" width="76" height="44" rx="8" fill="#fff" stroke="#111" stroke-width="3"/>
+    <rect x="58" y="62" width="10" height="16" rx="5" fill="#111"/>
+    <rect x="92" y="62" width="10" height="16" rx="5" fill="#111"/>
+    <path d="M68 104 Q80 112 92 104" fill="none" stroke="#111" stroke-width="4" stroke-linecap="round"/>
+  </g>
 </svg>

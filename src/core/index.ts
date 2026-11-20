@@ -4,11 +4,13 @@
  */
 import type { Db } from 'mongodb';
 import type { Clock, LanguageModelProvider, SlackGateway } from './ports';
+import { createPreferences, ensurePreferenceIndexes, type Preferences } from './preferences/preferences';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
 
 export * from './errors';
 export type * from './ports';
 export type { Role, SlackIdentity, User } from './users/users';
+export type { ThemePreference } from './preferences/preferences';
 
 export interface AppCoreConfig {
   /** Only this Slack workspace may sign in. */
@@ -27,15 +29,18 @@ export interface AppCoreDeps {
 
 export interface AppCore {
   users: Users;
+  preferences: Preferences;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
   return {
     users: createUsers(deps),
+    preferences: createPreferences(deps),
   };
 }
 
 /** Creates indexes. Idempotent; call once at process start. */
 export async function prepareDatabase(db: Db): Promise<void> {
   await ensureUserIndexes(db);
+  await ensurePreferenceIndexes(db);
 }

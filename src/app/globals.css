@@ -11,6 +11,12 @@
   --color-cyan: #3fd5ff;
   --color-lime: #b8ff3f;
   --color-danger: #ff4d4d;
+  /* Text on accent fills (yellow/pink/cyan/lime/danger): dark in both themes. */
+  --color-on-accent: #111111;
+
+  /* Botley's face stays the same in both themes. */
+  --botley-line: #111111;
+  --botley-screen: #ffffff;
 
   --border-width: 3px;
   --border: var(--border-width) solid var(--color-border);
@@ -32,14 +38,28 @@
   color-scheme: light;
 }
 
+/*
+ * Dark theme. <html data-theme="light|dark"> is the user's saved choice (see src/web/theme);
+ * without it we follow prefers-color-scheme. Keep the two dark blocks identical.
+ */
+:root[data-theme='dark'] {
+  --color-bg: #141414;
+  --color-surface: #1f1f1f;
+  --color-ink: #f5f5f0;
+  --color-muted: #b0b0a8;
+  --color-border: #f5f5f0;
+  --color-shadow: #f5f5f0;
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --color-bg: #141414;
     --color-surface: #1f1f1f;
     --color-ink: #f5f5f0;
     --color-muted: #b0b0a8;
     --color-border: #f5f5f0;
-    --color-shadow: #000000;
+    --color-shadow: #f5f5f0;
     color-scheme: dark;
   }
 }
@@ -74,13 +94,27 @@ pre {
   padding: var(--space-6);
 }
 
+/* A centred single-column page outside the app shell (sign-in errors, 404). */
+.page-narrow {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6);
+}
+
+/* A row of buttons. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
   font: 700 1rem var(--font-sans);
-  color: #111111;
+  color: var(--color-on-accent);
   background: var(--color-yellow);
   border: var(--border);
   border-radius: var(--radius);
@@ -114,8 +148,8 @@ pre {
   padding: 0 var(--space-2);
   font: 700 0.75rem var(--font-mono);
   text-transform: uppercase;
-  color: #111111;
+  color: var(--color-on-accent);
   background: var(--color-lime);
-  border: 2px solid #111111;
+  border: 2px solid var(--color-on-accent);
   border-radius: 4px;
 }

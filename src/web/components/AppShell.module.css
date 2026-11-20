@@ -20,7 +20,7 @@
   text-decoration: none;
   padding: 0 var(--space-2);
   background: var(--color-yellow);
-  color: #111111;
+  color: var(--color-on-accent);
   border: var(--border);
   box-shadow: var(--shadow-sm);
 }
