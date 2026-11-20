@@ -47,7 +47,7 @@ Process config is parsed and validated in `src/server/config.ts`. Add new variab
 
 ## Develop
 
-Node 24 and Docker (tests start real MongoDB, PostgreSQL, MySQL, MariaDB and SQL Server servers with Testcontainers, in parallel; the SQL Server image needs ~2 GB RAM).
+Node 24 and Docker (tests start real MongoDB and PostgreSQL servers with Testcontainers; MySQL, MariaDB and SQL Server start lazily, only when their driver test file runs, via `src/drivers/sql/test-server.ts`. SQL Server needs ~2 GB RAM).
 
 ```sh
 npm install
@@ -55,7 +55,7 @@ docker run -d --name botley-mongo -p 27017:27017 mongo:8   # or any Mongo
 MONGO_URL=mongodb://localhost:27017 npm run dev            # web on :3000 (reads .env)
 MONGO_URL=mongodb://localhost:27017 npm run dev:worker     # worker (tsx watch, reads .env)
 
-npm test            # vitest; starts mongo:8, postgres:17, mysql:8.4, mariadb:11.8, mssql 2022 via testcontainers (or set MONGO_TEST_URL / POSTGRES_TEST_URL / MYSQL_TEST_URL / MARIADB_TEST_URL / MSSQL_TEST_URL)
+npm test            # vitest; starts mongo:8 + postgres:17 via testcontainers (or set MONGO_TEST_URL / POSTGRES_TEST_URL), and mysql:8.4, mariadb:11.8, mssql 2022 on demand (or MYSQL_TEST_URL / MARIADB_TEST_URL = mysql://root:pw@host:port, MSSQL_TEST_URL = mssql://sa:pw@host:port)
 npm run lint        # eslint
 npm run typecheck   # next typegen + tsc
 npm run build       # next build (standalone) + dist/worker.mjs (esbuild)
@@ -95,7 +95,7 @@ src/
     signin/        Public sign-in page
   auth.ts          Auth.js config (Slack OIDC only)
   proxy.ts         Per-request access control (Next 16 "proxy", formerly middleware)
-test/global-setup.ts   Starts MongoDB, PostgreSQL, MySQL, MariaDB and SQL Server once per test run
+test/global-setup.ts   Starts MongoDB and PostgreSQL once per test run
 ```
 
 ### Conventions
@@ -175,7 +175,7 @@ A `DriverKind` registers a driver with the App Core. It has `kind`, `label`, `fi
 ### Adding a kind (MySQL, SQL Server, MongoDB, Salesforce, Uploads)
 
 1. Write `src/drivers/<kind>/<kind>.ts` that exports the driver factory and a `DriverKind`. SQL kinds call `assertReadOnlySql(query, '<flavour>')` first, then add whatever the engine offers (MySQL: `START TRANSACTION READ ONLY` + `MAX_EXECUTION_TIME`; SQL Server has no read-only transaction, so roll back and rely on the guard plus a `db_datareader` login). Non-SQL kinds validate their structured query and refuse `$out`, `$merge`, `$function`, `$where` and `$accumulator` with `QueryRejectedError`.
-2. Add the test server to `test/global-setup.ts` (`project.provide('<kind>Uri', …)`, with a `<KIND>_TEST_URL` override) and write a `testing.ts` helper that creates an isolated database for each caller. Salesforce uses a fake HTTP server instead.
+2. Add the test server to `test/global-setup.ts` (`project.provide('<kind>Uri', …)`, with a `<KIND>_TEST_URL` override; a server only one test file needs can start lazily instead, like MySQL and SQL Server in `src/drivers/sql/test-server.ts`) and write a `testing.ts` helper that creates an isolated database for each caller. Salesforce uses a fake HTTP server instead.
 3. In `src/drivers/<kind>/<kind>.test.ts`, seed the contract fixture (Dataset `orders`: `id` integer, `region` string, `amount` non-integer number; rows `(1,'north',10.5) (2,'south',20) (3,'north',7.25)`) and invoke the suite:
 
    ```ts

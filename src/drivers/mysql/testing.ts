@@ -1,10 +1,10 @@
 /**
- * Test helpers for MySQL and MariaDB: a fresh database per caller on a server started by
- * test/global-setup.ts (`mysqlUri` or `mariadbUri`), plus a root connection to seed it.
+ * Test helpers for MySQL and MariaDB: a fresh database per caller on a lazily started server
+ * (../sql/test-server.ts), plus a root connection to seed it.
  */
 import { randomUUID } from 'node:crypto';
 import mysql from 'mysql2/promise';
-import { inject } from 'vitest';
+import { testServerUri } from '../sql/test-server';
 import type { MysqlConnection } from './mysql';
 
 export interface MysqlTestDatabase {
@@ -23,7 +23,7 @@ export const CONTRACT_FIXTURE_SQL = `
 `;
 
 export async function createMysqlTestDatabase(server: 'mysql' | 'mariadb' = 'mysql'): Promise<MysqlTestDatabase> {
-  const url = new URL(inject(server === 'mysql' ? 'mysqlUri' : 'mariadbUri'));
+  const url = new URL(await testServerUri(server));
   const database = `test_${randomUUID().replaceAll('-', '')}`;
   const connection: MysqlConnection = {
     host: url.hostname,

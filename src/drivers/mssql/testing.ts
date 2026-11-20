@@ -1,10 +1,10 @@
 /**
- * Test helpers for SQL Server: a fresh database per caller on the server started by
- * test/global-setup.ts (`mssqlUri`), plus an `sa` connection to seed it.
+ * Test helpers for SQL Server: a fresh database per caller on a lazily started server
+ * (../sql/test-server.ts), plus an `sa` connection to seed it.
  */
 import { randomUUID } from 'node:crypto';
 import sql from 'mssql';
-import { inject } from 'vitest';
+import { testServerUri } from '../sql/test-server';
 import type { MssqlConnection } from './mssql';
 
 export interface MssqlTestDatabase {
@@ -34,7 +34,7 @@ function poolFor(c: Omit<MssqlConnection, 'sslMode'> & { database: string }) {
 }
 
 export async function createMssqlTestDatabase(): Promise<MssqlTestDatabase> {
-  const url = new URL(inject('mssqlUri'));
+  const url = new URL(await testServerUri('mssql'));
   const database = `test_${randomUUID().replaceAll('-', '')}`;
   const connection: MssqlConnection = {
     host: url.hostname,
