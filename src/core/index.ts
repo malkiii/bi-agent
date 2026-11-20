@@ -11,6 +11,8 @@ import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
 import { createConversations, ensureConversationIndexes, type Conversations } from './conversations/conversations';
 import { createSlackBot, ensureSlackBotIndexes, type SlackBot } from './slack/slack-bot';
+import { createPinnedQueries, type PinnedQueries } from './pinned-queries/pinned-queries';
+import { createSavedQuestions, ensureSavedQuestionIndexes, type SavedQuestions } from './saved-questions/saved-questions';
 
 export * from './errors';
 export type * from './ports';
@@ -34,6 +36,21 @@ export type {
 export type { SlackBot, SlackPrompt } from './slack/slack-bot';
 export { SHOW_QUERY_ACTION_ID } from './slack/render';
 export type { AgentToolContext, AgentToolkit, AgentToolkitFactory } from './agent/tools';
+export { pinAnswer, PinnedBlockError } from './pinned-queries/pinned-queries';
+export type {
+  PinnedAnswer,
+  PinnedBlock,
+  PinnedQueries,
+  PinnedQuery,
+  PinnedRun,
+  PinnedRunBlock,
+} from './pinned-queries/pinned-queries';
+export type {
+  SaveQuestionInput,
+  SavedQuestion,
+  SavedQuestions,
+  SavedQuestionVisibility,
+} from './saved-questions/saved-questions';
 
 export interface AppCoreConfig {
   /** Only this Slack workspace may sign in. */
@@ -62,6 +79,8 @@ export interface AppCore {
   dataSources: DataSources;
   conversations: Conversations;
   slackBot: SlackBot;
+  pinnedQueries: PinnedQueries;
+  savedQuestions: SavedQuestions;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
@@ -80,12 +99,15 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     dataSources,
     onAgentError: deps.onAgentError,
   });
+  const pinnedQueries = createPinnedQueries({ dataSources, clock: deps.clock });
   return {
     users,
     preferences: createPreferences(deps),
     dataSources,
     conversations,
     slackBot: createSlackBot({ db: deps.db, clock: deps.clock, slack: deps.slack, conversations, onError: deps.onAgentError }),
+    pinnedQueries,
+    savedQuestions: createSavedQuestions({ db: deps.db, clock: deps.clock, users, conversations, pinnedQueries }),
   };
 }
 
@@ -96,4 +118,5 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensureDataSourceIndexes(db);
   await ensureConversationIndexes(db);
   await ensureSlackBotIndexes(db);
+  await ensureSavedQuestionIndexes(db);
 }

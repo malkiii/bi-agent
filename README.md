@@ -89,6 +89,8 @@ src/
     conversations/ answer.ts (Answer + Result Block model, AnswerEvent), conversations.ts (startWeb, findOrStartSlack, ask, get, list)
     slack/         slack-bot.ts (handlePrompt, showQuery), render.ts (Answer -> Block Kit, pure)
     agent/         The agent loop: agent.ts (runAgent), tools.ts (toolkits), catalog.ts (what the agent may query), answer-draft.ts
+    pinned-queries/ Pin an Answer's queries + layout, re-run them without the LLM (Saved Questions, Reports, KPIs)
+    saved-questions/ Saved Questions: save an Answer, private/shared, re-run
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
   adapters/        Production implementations of ports (system clock, llm.ts = the six LLM providers, ...)
   drivers/         Data Source drivers. index.ts = builtInDrivers registry
@@ -103,6 +105,7 @@ src/
     botley/        Botley's state machine (machine.ts) and store (BotleyProvider.tsx)
     theme/         Light/dark theme: toggle, server action, per-user preference
     chat/          Web chat: ChatView (prompt box + streamed Answers), AnswerView (blocks, sources, show query), wire.ts (NDJSON protocol)
+    saved-questions/ "Save question" button, re-run view, server actions
   app/             Next.js App Router routes
     (app)/         Signed-in pages inside the app shell
     signin/        Public sign-in page
@@ -163,7 +166,7 @@ The Slack avatar `public/botley-avatar.png` (1024 px) is rendered from `public/b
 Every transport answers through one App Core use case, `core.conversations.ask(actor, conversationId, prompt, { onEvent })`. It stores the Prompt, runs the agent, stores the Answer and resolves with it. When the model or a tool crashes it never rejects: it resolves with `status: 'failed'` and a user-safe `error` (the cause goes to `AppCoreDeps.onAgentError`). It rejects only for access or input errors (`NotFoundError` when the actor isn't a Participant, `ValidationError` for an empty Prompt).
 
 - **Conversation model** (`src/core/conversations/conversations.ts`, Mongo `conversations` + `conversationMessages`): `source` is `{ kind: 'web' }` or `{ kind: 'slack', channel, threadTs }` (unique index on channel + thread). `participants` holds Slack user IDs; `get`/`list`/`ask` only work for Participants. Messages alternate `prompt` / `answer` in `seq` order. Earlier messages become model context through `summarize(answer)` (text, table shapes, executed queries). Slack uses `findOrStartSlack(actor, { channel, threadTs })`, which upserts the thread's Conversation and adds the poster to `participants`, then `answerPrompt` (`ask` plus the stored Answer's message id). Forks copy the messages into a new web Conversation.
-- **Answer model** (`src/core/conversations/answer.ts`): `blocks` (Result Blocks, a discriminated union on `type`; today `text` and `table`; `chart` and `file` get added there), `sources` (Data Sources and Dataset ids used, matched from the query text), `queries` (every executed query, failed ones too, with `resultId`, `language`, exact `query`, row count and the error; this powers "show query" and later Pinned Queries), `usage` and timing. Renderers must ignore block types they don't know. A Table block keeps at most `TABLE_BLOCK_MAX_ROWS` (1 000) rows and sets `truncated`, because the Answer is stored in one Mongo document.
+- **Answer model** (`src/core/conversations/answer.ts`): `blocks` (Result Blocks, a discriminated union on `type`; today `text` and `table`; `chart` and `file` get added there), `sources` (Data Sources and Dataset ids used, matched from the query text), `queries` (every executed query, failed ones too, with `resultId`, `language`, exact `query`, row count and the error; this powers "show query" and Pinned Queries; data blocks point back to it through `resultId`), `usage` and timing. Renderers must ignore block types they don't know. A Table block keeps at most `TABLE_BLOCK_MAX_ROWS` (1 000) rows and sets `truncated`, because the Answer is stored in one Mongo document.
 - **Events**: `onEvent` gets `progress` (a label such as "Querying Warehouse…"), `query` and `block` events while the agent works. The web streams them to the browser; Slack updates its placeholder message with the `progress` labels.
 - **Slack** (`src/core/slack/`, ADR 0004): the worker's Bolt adapter (`src/worker/slack-app.ts`) turns `app_mention` and DM `message` events into `core.slackBot.handlePrompt(...)`. That use case ignores redelivered events (`slackEvents`, keyed by channel + ts, 24 h TTL), reacts 👀, posts a placeholder in the thread, edits it with each `progress` label, then edits in the rendered Answer (❌ plus the error on failure). `render.ts` is pure: `renderAnswer` (Text as mrkdwn sections; the first Table as a Block Kit table of up to `SLACK_INLINE_TABLE_ROWS` = 15 rows, later tables as monospaced text; sources footer; "Show query" button whose value is the Answer message id) and `renderQueryModal`. New Result Block kinds get a `case` in `renderAnswer`; uploads (chart PNG, files) need a new `SlackGateway` method. `SlackGateway` (port) is implemented by `src/adapters/slack-web-gateway.ts` and, in tests, `InMemorySlackGateway` (`messages`, `reactions`, `modals`).
 - **The loop** (`src/core/agent/agent.ts`): AI SDK `streamText` with tools and `stopWhen: isStepCount(MAX_AGENT_STEPS)`. The model builds the Answer by calling emit tools. Plain text in its last step becomes a Text block too.
@@ -173,7 +176,34 @@ Every transport answers through one App Core use case, `core.conversations.ask(a
 - **LLM**: `LanguageModelProvider` (port) is built from `LLM_PROVIDER`/`LLM_MODEL` in `src/adapters/llm.ts`. `ServerConfig.llm.credentials` keeps every configured provider, ready for the admin provider switch.
 - **Tests** script the model with `h.llm.script(...)`. Each turn serves both `doGenerate` and `doStream`, and `h.llm.model.doStreamCalls[n].prompt` shows what the model received. See `src/core/conversations/conversations.test.ts` (real Postgres + Mongo).
 
-Web chat: `/chat` (new Conversation + recent list) and `/chat/[id]` (reopen). `POST /api/chat` `{ conversationId?, prompt }` streams NDJSON `ChatStreamEvent`s (`conversation`, the `AnswerEvent`s, then `answer` or `error`). See `src/web/chat/wire.ts`.
+Web chat: `/chat` (new Conversation + recent list) and `/chat/[id]` (reopen). `POST /api/chat` `{ conversationId?, prompt }` streams NDJSON `ChatStreamEvent`s (`conversation`, the `AnswerEvent`s, then `answer` (with the stored `messageId`) or `error`). See `src/web/chat/wire.ts`.
+
+## Pinned Queries and Saved Questions
+
+ADR 0001: a pinned Answer is re-run by executing its stored queries through the drivers and rebuilding its blocks from the fresh results. The LLM is never asked to answer again. Saved Questions (#17) use this, and Reports and KPIs should too.
+
+**Block → result mapping.** Every data block records the result it shows. A Table block has `resultId` (the `ExecutedQuery.resultId`), and its `columns` are the selected columns in order (`emitTable` takes an optional `columns` list). Answers stored before this have no `resultId`. Their tables can't be rebuilt and are left out when pinning. New data block types (charts) must carry `resultId` (or several) the same way.
+
+**`core.pinnedQueries`** (`src/core/pinned-queries/pinned-queries.ts`) is stateless. Callers store the `PinnedAnswer` in their own documents.
+
+```ts
+const pinned: PinnedAnswer = core.pinnedQueries.pin(answer);
+// { queries: PinnedQuery[] (successful ones only: resultId, dataSourceId, dataSourceName, language, query),
+//   layout: PinnedBlock[] ({ type: 'text', markdown } | { type: 'table', resultId, title?, columns: string[] }) }
+// ValidationError if the Answer failed or no data block can be rebuilt.
+
+const run: PinnedRun = await core.pinnedQueries.run(pinned);
+// { status: 'complete' | 'failed', error?, blocks: PinnedRunBlock[], queries: ExecutedQuery[], sources,
+//   results: Record<resultId, QueryResult>, startedAt, finishedAt }
+// PinnedRunBlock = { status: 'ok', block: ResultBlock } | { status: 'error', error, pinned: PinnedBlock }
+```
+
+- `run` never rejects because a query failed. A failing query (schema change, a Data Source that was deleted or no longer has Exposed Datasets) makes `status: 'failed'` and sets `error` (`The Pinned Query "totals" failed: …`). Each block built from that query becomes `{ status: 'error' }`, and the other blocks are still rebuilt. A column that disappeared from a result fails only its block.
+- Queries run through the same catalog as the agent (`createAgentCatalog`), so they obey the same Data Source visibility. Read-only enforcement stays in the drivers.
+- Text blocks are pinned verbatim, so their numbers are as old as the save. The Saved Question view says so. Reports should replace or add to them with fresh commentary written from `run.results`. KPIs read `run.results[resultId].rows[0][0]`.
+- **To add a block type:** add it to `ResultBlock` and `PinnedBlock`, then add an entry `{ pin, dependsOn, rebuild }` to `pinnableBlocks`. The table is keyed by `ResultBlock['type']`, so it won't compile until you do.
+
+**`core.savedQuestions`** (`src/core/saved-questions/saved-questions.ts`, Mongo `savedQuestions`): `save(actor, { conversationId, answerMessageId, title?, visibility? })` (Participants only; title defaults to the Prompt), `get`, `list(actor, { scope: 'mine' | 'shared' })`, `run(actor, id)` (returns a `PinnedRun` and sets `lastRunAt`), `update(actor, id, { title?, visibility? })` (owner only) and `delete` (owner or admin). A private Saved Question is `NotFoundError` for everyone else. Web: "Save question" under each Answer with results, `/questions` (mine + shared) and `/questions/[id]` (Run, share/unshare, delete, Pinned Queries).
 
 ## Data Source drivers
 
