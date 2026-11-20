@@ -1,0 +1,74 @@
+.botley {
+  display: block;
+  overflow: visible;
+}
+
+.eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.botley[data-state='idle'] .body {
+  animation: bob 2.4s ease-in-out infinite;
+}
+
+.botley[data-state='idle'] .shadow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: shadow 2.4s ease-in-out infinite;
+}
+
+.botley[data-state='idle'] .eyes {
+  animation: blink 4s infinite;
+}
+
+.botley[data-state='idle'] .antenna {
+  animation: glow 2.4s ease-in-out infinite;
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes shadow {
+  0%,
+  100% {
+    transform: scaleX(1);
+  }
+  50% {
+    transform: scaleX(0.85);
+  }
+}
+
+@keyframes blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    fill: var(--color-pink);
+  }
+  50% {
+    fill: var(--color-lime);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .botley * {
+    animation: none !important;
+  }
+}

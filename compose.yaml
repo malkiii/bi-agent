@@ -1,0 +1,60 @@
+# docker compose up --build        -> web on http://localhost:3000, worker, mongo
+# docker compose --profile https up -> also Caddy with an internal TLS certificate (needed for Slack sign-in)
+x-app: &app
+  env_file: .env
+  environment:
+    MONGO_URL: mongodb://mongo:27017
+  volumes:
+    - uploads:/data/uploads
+  depends_on:
+    mongo:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  web:
+    <<: *app
+    build:
+      context: .
+      target: web
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      AUTH_TRUST_HOST: 'true'
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+
+  worker:
+    <<: *app
+    build:
+      context: .
+      target: worker
+
+  mongo:
+    image: mongo:8
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    profiles: [https]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    ports:
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  uploads:
+  caddy-data:

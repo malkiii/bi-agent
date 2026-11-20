@@ -1,0 +1,7 @@
+# HTTPS in front of `web` with Caddy's internal CA (no public URL needed).
+# Browsers will warn until you trust Caddy's root certificate:
+#   docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+{$SITE_ADDRESS} {
+	tls internal
+	reverse_proxy web:3000
+}

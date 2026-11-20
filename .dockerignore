@@ -1,0 +1,12 @@
+node_modules
+.next
+dist
+.git
+.claude
+.codegraph
+.vitest
+.env
+.env.*
+!.env.example
+data
+*.log

@@ -1,0 +1,121 @@
+/* Neubrutalist theme tokens. Components use these variables only; never raw colours. */
+:root {
+  --color-bg: #fffdf5;
+  --color-surface: #ffffff;
+  --color-ink: #111111;
+  --color-muted: #555555;
+  --color-border: #111111;
+  --color-shadow: #111111;
+  --color-yellow: #ffd23f;
+  --color-pink: #ff6b9d;
+  --color-cyan: #3fd5ff;
+  --color-lime: #b8ff3f;
+  --color-danger: #ff4d4d;
+
+  --border-width: 3px;
+  --border: var(--border-width) solid var(--color-border);
+  --shadow-offset: 5px;
+  --shadow: var(--shadow-offset) var(--shadow-offset) 0 0 var(--color-shadow);
+  --shadow-sm: 3px 3px 0 0 var(--color-shadow);
+  --radius: 6px;
+
+  --font-sans: var(--font-space-grotesk), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #141414;
+    --color-surface: #1f1f1f;
+    --color-ink: #f5f5f0;
+    --color-muted: #b0b0a8;
+    --color-border: #f5f5f0;
+    --color-shadow: #000000;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+a {
+  color: inherit;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+.card {
+  background: var(--color-surface);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: var(--space-6);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font: 700 1rem var(--font-sans);
+  color: #111111;
+  background: var(--color-yellow);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+
+/* Buttons press into their shadow. */
+.btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: none;
+}
+
+.btn--pink {
+  background: var(--color-pink);
+}
+
+.btn--cyan {
+  background: var(--color-cyan);
+}
+
+.btn--ghost {
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.tag {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  font: 700 0.75rem var(--font-mono);
+  text-transform: uppercase;
+  color: #111111;
+  background: var(--color-lime);
+  border: 2px solid #111111;
+  border-radius: 4px;
+}
