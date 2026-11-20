@@ -9,8 +9,11 @@ export default function AdminPage() {
         <li>
           <Link href="/admin/data-sources">Data Sources</Link>: connections, credentials and Exposed Datasets.
         </li>
+        <li>
+          <Link href="/admin/users">Users &amp; roles</Link>
+        </li>
       </ul>
-      <p>Synonyms, roles and the audit log will live here too.</p>
+      <p>Synonyms and the audit log will live here too.</p>
     </section>
   );
 }

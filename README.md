@@ -69,9 +69,9 @@ src/
   core/            App Core: transport-agnostic use cases. The main test seam.
     index.ts       createAppCore(deps), prepareDatabase(db), public types and errors
     ports.ts       Clock, SlackGateway, LanguageModelProvider
-    errors.ts      AppError subclasses (WrongWorkspaceError, ForbiddenError, NotFoundError, ValidationError)
+    errors.ts      AppError subclasses (WrongWorkspaceError, ForbiddenError, NotFoundError, LastAdminError, ValidationError)
     secret-box.ts  AES-256-GCM sealing of secrets under ENCRYPTION_KEY
-    users/         Slack sign-in, roles, requireAdmin
+    users/         Slack sign-in, roles (list, setRole), requireAdmin
     data-sources/  driver.ts (the driver contract types), data-sources.ts (admin CRUD, test, introspect, Exposed Datasets, withDriver)
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
   adapters/        Production implementations of ports (system clock, ...)
