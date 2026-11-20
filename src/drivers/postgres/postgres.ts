@@ -20,6 +20,7 @@ import {
   type DriverKind,
   type IntrospectedDataset,
 } from '@/core/data-sources/driver';
+import { exactNumber } from '../sql/exact-number';
 import { assertReadOnlySql } from '../sql/read-only-guard';
 
 export interface PostgresConnection {
@@ -92,15 +93,6 @@ function columnType(oid: number): ColumnType {
     default:
       return 'other';
   }
-}
-
-/** Numbers as JS numbers only when that is exact; otherwise the engine's text. */
-function exactNumber(text: string): number | string {
-  const value = Number(text);
-  if (!Number.isFinite(value)) return text;
-  if (/^-?\d+$/.test(text)) return Number.isSafeInteger(value) ? value : text;
-  const digits = text.replace(/^-/, '').replace('.', '').replace(/^0+/, '').replace(/0+$/, '');
-  return digits.length <= 15 ? value : text;
 }
 
 const typeParsers: pg.CustomTypesConfig = {

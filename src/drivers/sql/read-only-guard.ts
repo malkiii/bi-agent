@@ -22,6 +22,24 @@ const FORBIDDEN_WORDS = new Set([
   'openquery', 'outfile', 'dumpfile',
 ]);
 
+/**
+ * Extra words per flavour. T-SQL needs no semicolon between statements, so `SELECT 1 COMMIT`
+ * is two statements: refuse the statement keywords that are not already covered above.
+ * MySQL: server file reads and advisory locks that outlive the query on a pooled connection.
+ */
+const FLAVOUR_FORBIDDEN_WORDS: Record<SqlFlavour, ReadonlySet<string>> = {
+  postgresql: new Set(),
+  duckdb: new Set(),
+  mysql: new Set(['load_file', 'get_lock', 'handler']),
+  tsql: new Set([
+    'waitfor', 'commit', 'rollback', 'begin', 'save', 'use', 'receive', 'reconfigure', 'checkpoint',
+    'revert', 'setuser', 'goto', 'raiserror', 'throw', 'writetext', 'updatetext', 'readtext', 'openxml',
+  ]),
+};
+
+/** Word pairs refused in every flavour (row-locking clauses whose words alone are harmless). */
+const FORBIDDEN_PAIRS: readonly [string, string][] = [['for', 'share']];
+
 interface Token {
   kind: 'word' | 'semicolon' | 'other';
   text: string;
@@ -47,12 +65,25 @@ export function assertReadOnlySql(sql: string, flavour: SqlFlavour): string {
     throw new QueryRejectedError('Only read-only SELECT or WITH queries are allowed.');
   }
 
-  const forbidden = body.find((t) => t.kind === 'word' && FORBIDDEN_WORDS.has(t.text.toLowerCase()));
+  const extra = FLAVOUR_FORBIDDEN_WORDS[flavour];
+  const forbidden = body.find((t) => {
+    const word = t.text.toLowerCase();
+    return t.kind === 'word' && (FORBIDDEN_WORDS.has(word) || extra.has(word));
+  });
   if (forbidden) {
     throw new QueryRejectedError(
       `Only read-only queries are allowed, and this one contains ${forbidden.text.toUpperCase()}. ` +
         `If that is a column or table name, quote it.`,
     );
+  }
+
+  for (let i = 0; i + 1 < body.length; i++) {
+    const [a, b] = [body[i]!, body[i + 1]!];
+    if (a.kind !== 'word' || b.kind !== 'word') continue;
+    const pair = FORBIDDEN_PAIRS.find(([x, y]) => a.text.toLowerCase() === x && b.text.toLowerCase() === y);
+    if (pair) {
+      throw new QueryRejectedError(`Only read-only queries are allowed; remove ${pair.join(' ').toUpperCase()}.`);
+    }
   }
 
   return sql.slice(0, body[body.length - 1]!.end).trim();
@@ -77,11 +108,18 @@ function tokenize(sql: string, flavour: SqlFlavour): Token[] {
 
     if (/\s/.test(c)) {
       i++;
-    } else if ((c === '-' && next === '-') || (c === '#' && flavour === 'mysql')) {
+    } else if (
+      // MySQL only starts a `--` comment when whitespace follows; `1--1` is arithmetic.
+      (c === '-' && next === '-' && (flavour !== 'mysql' || i + 2 >= n || /\s/.test(sql[i + 2]!))) ||
+      (c === '#' && flavour === 'mysql')
+    ) {
       const nl = sql.indexOf('\n', i);
       i = nl === -1 ? n : nl + 1;
     } else if (c === '/' && next === '*') {
-      i = skipBlockComment(sql, i, dollarQuotes) ?? unterminated('comment');
+      if (flavour === 'mysql' && /^\/\*M?!/.test(sql.slice(i, i + 4))) {
+        throw new QueryRejectedError('Executable comments (/*! ... */) are not allowed; remove them.');
+      }
+      i =skipBlockComment(sql, i, dollarQuotes) ?? unterminated('comment');
     } else if (c === "'") {
       const backslashes = flavour === 'mysql' || isEscapeStringPrefix(tokens, i);
       i = push('other', i, skipQuoted(sql, i, "'", backslashes) ?? unterminated('string'));

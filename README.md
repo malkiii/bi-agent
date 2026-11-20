@@ -47,7 +47,7 @@ Process config is parsed and validated in `src/server/config.ts`. Add new variab
 
 ## Develop
 
-Node 24 and Docker (tests start real MongoDB and PostgreSQL servers with Testcontainers).
+Node 24 and Docker (tests start real MongoDB, PostgreSQL, MySQL, MariaDB and SQL Server servers with Testcontainers, in parallel; the SQL Server image needs ~2 GB RAM).
 
 ```sh
 npm install
@@ -55,7 +55,7 @@ docker run -d --name botley-mongo -p 27017:27017 mongo:8   # or any Mongo
 MONGO_URL=mongodb://localhost:27017 npm run dev            # web on :3000 (reads .env)
 MONGO_URL=mongodb://localhost:27017 npm run dev:worker     # worker (tsx watch, reads .env)
 
-npm test            # vitest; starts mongo:8 + postgres:17 via testcontainers (or set MONGO_TEST_URL / POSTGRES_TEST_URL)
+npm test            # vitest; starts mongo:8, postgres:17, mysql:8.4, mariadb:11.8, mssql 2022 via testcontainers (or set MONGO_TEST_URL / POSTGRES_TEST_URL / MYSQL_TEST_URL / MARIADB_TEST_URL / MSSQL_TEST_URL)
 npm run lint        # eslint
 npm run typecheck   # next typegen + tsc
 npm run build       # next build (standalone) + dist/worker.mjs (esbuild)
@@ -79,8 +79,10 @@ src/
   adapters/        Production implementations of ports (system clock, ...)
   drivers/         Data Source drivers. index.ts = builtInDrivers registry
     contract/      describeDriverContract(): the shared suite every driver runs
-    sql/           read-only-guard.ts: single SELECT/WITH check shared by SQL drivers
+    sql/           read-only-guard.ts: single SELECT/WITH check shared by SQL drivers; exact-number.ts
     postgres/      postgres.ts (driver + kind), testing.ts (per-test databases), postgres.test.ts
+    mysql/         MySQL and MariaDB (kind `mysql`); the contract runs against both servers
+    mssql/         SQL Server (kind `mssql`)
   server/          Process wiring shared by web and worker: env config, bootstrap()
   worker/          Worker process: main.ts (entry), worker.ts (startWorker)
   web/             Web-only code: auth helpers, server runtime, components
@@ -91,7 +93,7 @@ src/
     signin/        Public sign-in page
   auth.ts          Auth.js config (Slack OIDC only)
   proxy.ts         Per-request access control (Next 16 "proxy", formerly middleware)
-test/global-setup.ts   Starts MongoDB and PostgreSQL once per test run
+test/global-setup.ts   Starts MongoDB, PostgreSQL, MySQL, MariaDB and SQL Server once per test run
 ```
 
 ### Conventions
@@ -152,6 +154,9 @@ Every Data Source kind implements `DataSourceDriver` (`src/core/data-sources/dri
 - `close()`.
 
 Read-only enforcement lives in the driver, so no caller can bypass it. For SQL, `assertReadOnlySql(sql, flavour)` (`src/drivers/sql/read-only-guard.ts`) accepts one `SELECT`/`WITH` statement with no write, DDL, locking or file keyword outside strings, quoted names and comments. It understands each flavour's quoting (`postgresql`, `mysql`, `tsql`, `duckdb`). The driver then adds engine-level protection. Postgres runs the query as a cursor in `BEGIN TRANSACTION READ ONLY` (always rolled back) over the extended protocol, with `SET LOCAL statement_timeout`, and fetches only `maxRows + 1` rows.
+
+- **MySQL / MariaDB** (`mysql`): `multipleStatements: false`, `START TRANSACTION READ ONLY` (always rolled back). A client timer runs `KILL QUERY` from a separate connection at the timeout, with `max_execution_time` (MySQL) or `max_statement_time` (MariaDB) a second later as a backstop. Rows are streamed; at `maxRows + 1` the query is killed and the connection dropped. The guard also refuses executable comments (`/*! */`), `LOAD_FILE`, `GET_LOCK` and treats `--` as a comment only when whitespace follows (MySQL rules). Dates stay text (`dateStrings`); Datasets are the tables and views of the configured database, with ids like `orders` or `` `Big Deals` ``.
+- **SQL Server** (`mssql`): no read-only transactions, so the query runs in a transaction that is always rolled back, and admins should use a `db_datareader`-only login. T-SQL needs no semicolon between statements, so the guard (`tsql`) also refuses statement keywords such as `WAITFOR`, `COMMIT`, `BEGIN`, `USE`, `RECEIVE` anywhere. A client timer cancels the request at the timeout; rows are streamed and the request is cancelled at `maxRows + 1`. Only the first result set is returned. Zone-less dates (`date`, `datetime2`, …) come back as text, `datetimeoffset` as a `Date`; `decimal` values arrive as JS numbers (tedious has no exact mode). Ids look like `dbo.orders`, `dbo.[Big Deals]`.
 
 A `DriverKind` registers a driver with the App Core. It has `kind`, `label`, `fields` (form descriptors; `secret: true` fields are encrypted and only ever returned as "set" flags), zod `configSchema`/`secretsSchema`, and `create(config, secrets)`. The admin form renders from `fields`, so a simple kind needs no UI code. App Core code gets a driver with `core.dataSources.withDriver(id, fn)`, which decrypts the credentials and closes the driver afterwards.
 

@@ -4,7 +4,11 @@
  */
 import type { DriverRegistry } from '@/core/data-sources/driver';
 import { postgresKind } from './postgres/postgres';
+import { mysqlKind } from './mysql/mysql';
+import { mssqlKind } from './mssql/mssql';
 
 export const builtInDrivers: DriverRegistry = {
   [postgresKind.kind]: postgresKind,
+  [mysqlKind.kind]: mysqlKind,
+  [mssqlKind.kind]: mssqlKind,
 };
