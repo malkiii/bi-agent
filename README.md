@@ -86,6 +86,7 @@ src/
     contract/      describeDriverContract(): the shared suite every driver runs
     sql/           read-only-guard.ts: single SELECT/WITH check shared by SQL drivers
     postgres/      postgres.ts (driver + kind), testing.ts (per-test databases), postgres.test.ts
+    mongodb/       mongodb.ts (driver + kind), testing.ts (per-test databases), mongodb.test.ts
   server/          Process wiring shared by web and worker: env config, bootstrap()
   worker/          Worker process: main.ts (entry), worker.ts (startWorker)
   web/             Web-only code: auth helpers, server runtime, components
@@ -175,6 +176,16 @@ Every Data Source kind implements `DataSourceDriver` (`src/core/data-sources/dri
 
 Read-only enforcement lives in the driver, so no caller can bypass it. For SQL, `assertReadOnlySql(sql, flavour)` (`src/drivers/sql/read-only-guard.ts`) accepts one `SELECT`/`WITH` statement with no write, DDL, locking or file keyword outside strings, quoted names and comments. It understands each flavour's quoting (`postgresql`, `mysql`, `tsql`, `duckdb`). The driver then adds engine-level protection. Postgres runs the query as a cursor in `BEGIN TRANSACTION READ ONLY` (always rolled back) over the extended protocol, with `SET LOCAL statement_timeout`, and fetches only `maxRows + 1` rows.
 
+**MongoDB** (`src/drivers/mongodb/mongodb.ts`) takes a structured query instead of a string: `{ find: '<collection>', filter?, projection?, sort?, skip?, limit? }` or `{ aggregate: '<collection>', pipeline: [...] }`. Nothing else is accepted (no other command, no extra option), and `$out`, `$merge`, `$function`, `$where`, `$accumulator` and `$changeStream` are refused wherever they appear, including nested `$lookup`/`$facet` pipelines, `$expr` and projections. Values may be written as Extended JSON (`{ "$date": "…" }`, `{ "$oid": "…" }`). `maxTimeMS` enforces the timeout, and only `maxRows + 1` documents are fetched. Documents are flattened into columns and rows:
+
+- each document is a row, and each field path is a column, in the order the paths first appear across the documents (`_id` first);
+- non-empty subdocuments are flattened into dotted paths (`address.city`); arrays and empty subdocuments stay as JSON values (`json`);
+- a field a document lacks is `null`;
+- `ObjectId` and UUIDs become hex strings, `Decimal128`/`Long` follow the exact-number rule, dates stay `Date`s;
+- a column's type is the one type its values share. Integers mixed with doubles are `number`, and any other mix is `other`.
+
+Introspection applies the same rule to a `$sample` of 100 documents per collection (sorted by `_id`). `nativeType` lists the BSON types seen (e.g. `double|int`), and a column is nullable when a sampled document lacks it or holds null. Views are listed with `kind: 'view'`, and `system.*` collections are skipped.
+
 A `DriverKind` registers a driver with the App Core. It has `kind`, `label`, `fields` (form descriptors; `secret: true` fields are encrypted and only ever returned as "set" flags), zod `configSchema`/`secretsSchema`, and `create(config, secrets)`. The admin form renders from `fields`, so a simple kind needs no UI code. App Core code gets a driver with `core.dataSources.withDriver(id, fn)`, which decrypts the credentials and closes the driver afterwards.
 
 ### Adding a kind (MySQL, SQL Server, MongoDB, Salesforce, Uploads)
@@ -193,5 +204,5 @@ A `DriverKind` registers a driver with the App Core. It has `kind`, `label`, `fi
    });
    ```
 
-   Add tests for anything kind-specific (views, type mapping, quoting) in the same file.
+   `queries` are written in the kind's own language (Mongo passes structured objects). A kind whose Datasets always carry an extra column (Mongo's `_id`) passes `implicitColumns: ['_id']`: introspection must still list it, but it is left out of the fixture comparison. Add tests for anything kind-specific (views, type mapping, quoting) in the same file.
 4. Register the kind in `builtInDrivers` (`src/drivers/index.ts`). The admin UI ("Add <label>") and the App Core pick it up from there.
