@@ -3,6 +3,7 @@ import { createAppCore, prepareDatabase, type AppCore } from '@/core';
 import { systemClock } from '@/adapters/system-clock';
 import { builtInDrivers } from '@/drivers';
 import { unconfiguredLlm, unconfiguredSlack } from '@/adapters/unconfigured';
+import { createLanguageModelProvider } from '@/adapters/llm';
 import type { ServerConfig } from './config';
 
 export interface Logger {
@@ -27,9 +28,10 @@ export async function bootstrap(config: ServerConfig): Promise<ServerRuntime> {
     db,
     clock: systemClock,
     slack: unconfiguredSlack,
-    llm: unconfiguredLlm,
+    llm: config.llm ? createLanguageModelProvider(config.llm) : unconfiguredLlm,
     drivers: builtInDrivers,
     config: config.core,
+    onAgentError: (error) => console.error('Answer failed:', error),
   });
   return { core, db, client };
 }
