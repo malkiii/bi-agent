@@ -52,7 +52,9 @@ export async function POST(req: Request) {
       send({ type: 'conversation', id: conversationId });
       try {
         const answer = await core.conversations.ask(slackUserId, conversationId, prompt, { onEvent: send });
-        send({ type: 'answer', answer });
+        const { messages } = await core.conversations.get(slackUserId, conversationId);
+        const messageId = messages.findLast((m) => m.kind === 'answer')?.id;
+        send({ type: 'answer', answer, ...(messageId ? { messageId } : {}) });
       } catch (error) {
         if (!(error instanceof AppError)) console.error('Chat request failed:', error);
         send({ type: 'error', message: error instanceof AppError ? error.message : 'Something went wrong.' });

@@ -8,7 +8,7 @@ import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import { AppError } from '../errors';
 import type { AnswerDraft } from './answer-draft';
-import { tableBlock } from './answer-draft';
+import { selectColumns, tableBlock } from './answer-draft';
 import type { AgentCatalog, AgentDataSource } from './catalog';
 
 export interface AgentToolContext {
@@ -134,11 +134,16 @@ export const emitToolkit: AgentToolkitFactory = ({ answer }) => ({
       inputSchema: z.object({
         resultId: z.string().describe('The resultId returned by runQuery'),
         title: z.string().optional(),
+        columns: z.array(z.string()).optional().describe('Column names to show, in order. Default: all columns.'),
       }),
-      execute: async ({ resultId, title }) => {
+      execute: async ({ resultId, title, columns }) => {
         const result = answer.result(resultId);
         if (!result) return { ok: false, error: `Unknown resultId "${resultId}". Known: ${answer.resultIds().join(', ') || 'none'}.` };
-        answer.addBlock(tableBlock(result, title));
+        const unknown = columns?.filter((name) => !result.columns.some((c) => c.name === name)) ?? [];
+        if (unknown.length > 0) {
+          return { ok: false, error: `Unknown columns: ${unknown.join(', ')}. Known: ${result.columns.map((c) => c.name).join(', ')}.` };
+        }
+        answer.addBlock(tableBlock(columns?.length ? selectColumns(result, columns) : result, title, resultId));
         return { ok: true };
       },
     }),
@@ -148,7 +153,7 @@ export const emitToolkit: AgentToolkitFactory = ({ answer }) => ({
 export const builtInToolkits: readonly AgentToolkitFactory[] = [catalogToolkit, queryToolkit, emitToolkit];
 
 /** Mongo sources take a structured request; everything else takes the text as-is. */
-function parseQuery(ds: AgentDataSource, query: string) {
+export function parseQuery(ds: Pick<AgentDataSource, 'dialect'>, query: string) {
   if (ds.dialect.language !== 'mongo') return query;
   let parsed: unknown;
   try {

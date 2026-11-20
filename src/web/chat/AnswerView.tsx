@@ -66,7 +66,8 @@ export function AnswerView({ blocks, sources, queries, status = 'complete', erro
   );
 }
 
-function BlockView({ block }: { block: ResultBlock }) {
+/** One Result Block; unknown block types render nothing. */
+export function BlockView({ block }: { block: ResultBlock }) {
   switch (block.type) {
     case 'text':
       return (
