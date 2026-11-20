@@ -9,6 +9,9 @@ import type { Clock, LanguageModelProvider, SlackGateway } from './ports';
 import { createPreferences, ensurePreferenceIndexes, type Preferences } from './preferences/preferences';
 import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
+import { createConversations, ensureConversationIndexes, type Conversations } from './conversations/conversations';
+import { createPinnedQueries, type PinnedQueries } from './pinned-queries/pinned-queries';
+import { createSavedQuestions, ensureSavedQuestionIndexes, type SavedQuestions } from './saved-questions/saved-questions';
 
 export * from './errors';
 export type * from './ports';
@@ -21,6 +24,30 @@ export type {
   DataSourceView,
 } from './data-sources/data-sources';
 export * from './data-sources/driver';
+export * from './conversations/answer';
+export type {
+  AskOptions,
+  Conversation,
+  ConversationMessage,
+  ConversationSource,
+  ConversationWithMessages,
+} from './conversations/conversations';
+export type { AgentToolContext, AgentToolkit, AgentToolkitFactory } from './agent/tools';
+export { pinAnswer, PinnedBlockError } from './pinned-queries/pinned-queries';
+export type {
+  PinnedAnswer,
+  PinnedBlock,
+  PinnedQueries,
+  PinnedQuery,
+  PinnedRun,
+  PinnedRunBlock,
+} from './pinned-queries/pinned-queries';
+export type {
+  SaveQuestionInput,
+  SavedQuestion,
+  SavedQuestions,
+  SavedQuestionVisibility,
+} from './saved-questions/saved-questions';
 
 export interface AppCoreConfig {
   /** Only this Slack workspace may sign in. */
@@ -39,26 +66,43 @@ export interface AppCoreDeps {
   /** The Data Source kinds; production passes `builtInDrivers` from `@/drivers`. */
   drivers: DriverRegistry;
   config: AppCoreConfig;
+  /** Called with the underlying error when an Answer fails (model or tool crash), for logging. */
+  onAgentError?: (error: unknown) => void;
 }
 
 export interface AppCore {
   users: Users;
   preferences: Preferences;
   dataSources: DataSources;
+  conversations: Conversations;
+  pinnedQueries: PinnedQueries;
+  savedQuestions: SavedQuestions;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
   const users = createUsers(deps);
+  const dataSources = createDataSources({
+    db: deps.db,
+    clock: deps.clock,
+    users,
+    drivers: deps.drivers,
+    secretBox: createSecretBox(deps.config.encryptionKey),
+  });
+  const conversations = createConversations({
+    db: deps.db,
+    clock: deps.clock,
+    llm: deps.llm,
+    dataSources,
+    onAgentError: deps.onAgentError,
+  });
+  const pinnedQueries = createPinnedQueries({ dataSources, clock: deps.clock });
   return {
     users,
     preferences: createPreferences(deps),
-    dataSources: createDataSources({
-      db: deps.db,
-      clock: deps.clock,
-      users,
-      drivers: deps.drivers,
-      secretBox: createSecretBox(deps.config.encryptionKey),
-    }),
+    dataSources,
+    conversations,
+    pinnedQueries,
+    savedQuestions: createSavedQuestions({ db: deps.db, clock: deps.clock, users, conversations, pinnedQueries }),
   };
 }
 
@@ -67,4 +111,6 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensureUserIndexes(db);
   await ensurePreferenceIndexes(db);
   await ensureDataSourceIndexes(db);
+  await ensureConversationIndexes(db);
+  await ensureSavedQuestionIndexes(db);
 }

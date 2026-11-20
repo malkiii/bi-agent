@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { BotleyCue } from '@/web/botley/BotleyProvider';
 import { Botley } from '@/web/components/Botley';
 import { requireUser } from '@/web/current-user';
@@ -19,7 +20,12 @@ export default async function HomePage() {
       <Botley />
       <div>
         <h1 className={styles.title}>Hi {firstName}, I&apos;m Botley.</h1>
-        <p className={styles.lead}>Nothing here yet. Soon you&apos;ll be able to ask me about your data right here, or by mentioning me in Slack.</p>
+        <p className={styles.lead}>Ask me about your data right here, or (soon) by mentioning me in Slack.</p>
+        <p className="actions">
+          <Link href="/chat" className="btn">
+            Start a chat
+          </Link>
+        </p>
       </div>
     </section>
   );
