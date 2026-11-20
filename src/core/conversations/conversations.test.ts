@@ -59,6 +59,7 @@ describe('answering a Prompt in a web Conversation', () => {
       {
         type: 'table',
         title: 'North total',
+        resultId: 'north',
         columns: [
           { name: 'region', type: 'string' },
           { name: 'total', type: 'number' },

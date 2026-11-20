@@ -10,6 +10,8 @@ import { createPreferences, ensurePreferenceIndexes, type Preferences } from './
 import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
 import { createConversations, ensureConversationIndexes, type Conversations } from './conversations/conversations';
+import { createPinnedQueries, type PinnedQueries } from './pinned-queries/pinned-queries';
+import { createSavedQuestions, ensureSavedQuestionIndexes, type SavedQuestions } from './saved-questions/saved-questions';
 
 export * from './errors';
 export type * from './ports';
@@ -31,6 +33,21 @@ export type {
   ConversationWithMessages,
 } from './conversations/conversations';
 export type { AgentToolContext, AgentToolkit, AgentToolkitFactory } from './agent/tools';
+export { pinAnswer, PinnedBlockError } from './pinned-queries/pinned-queries';
+export type {
+  PinnedAnswer,
+  PinnedBlock,
+  PinnedQueries,
+  PinnedQuery,
+  PinnedRun,
+  PinnedRunBlock,
+} from './pinned-queries/pinned-queries';
+export type {
+  SaveQuestionInput,
+  SavedQuestion,
+  SavedQuestions,
+  SavedQuestionVisibility,
+} from './saved-questions/saved-questions';
 
 export interface AppCoreConfig {
   /** Only this Slack workspace may sign in. */
@@ -58,6 +75,8 @@ export interface AppCore {
   preferences: Preferences;
   dataSources: DataSources;
   conversations: Conversations;
+  pinnedQueries: PinnedQueries;
+  savedQuestions: SavedQuestions;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
@@ -69,17 +88,21 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     drivers: deps.drivers,
     secretBox: createSecretBox(deps.config.encryptionKey),
   });
+  const conversations = createConversations({
+    db: deps.db,
+    clock: deps.clock,
+    llm: deps.llm,
+    dataSources,
+    onAgentError: deps.onAgentError,
+  });
+  const pinnedQueries = createPinnedQueries({ dataSources, clock: deps.clock });
   return {
     users,
     preferences: createPreferences(deps),
     dataSources,
-    conversations: createConversations({
-      db: deps.db,
-      clock: deps.clock,
-      llm: deps.llm,
-      dataSources,
-      onAgentError: deps.onAgentError,
-    }),
+    conversations,
+    pinnedQueries,
+    savedQuestions: createSavedQuestions({ db: deps.db, clock: deps.clock, users, conversations, pinnedQueries }),
   };
 }
 
@@ -89,4 +112,5 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensurePreferenceIndexes(db);
   await ensureDataSourceIndexes(db);
   await ensureConversationIndexes(db);
+  await ensureSavedQuestionIndexes(db);
 }

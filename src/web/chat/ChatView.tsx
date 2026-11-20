@@ -2,6 +2,7 @@
 
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useBotley } from '@/web/botley/BotleyProvider';
+import { SaveQuestionButton } from '@/web/saved-questions/SaveQuestionButton';
 import { AnswerView } from './AnswerView';
 import type { ChatItem } from './items';
 import { createNdjsonParser, type ChatRequest, type ChatStreamEvent } from './wire';
@@ -53,7 +54,7 @@ export function ChatView({ conversationId: initialId, initialItems }: { conversa
           break;
         case 'answer':
           failed = event.answer.status === 'failed';
-          update(() => ({ ...event.answer, progress: undefined }));
+          update(() => ({ ...event.answer, messageId: event.messageId, progress: undefined }));
           break;
         case 'error':
           failed = true;
@@ -123,6 +124,9 @@ export function ChatView({ conversationId: initialId, initialItems }: { conversa
             ) : (
               <li key={item.id}>
                 <AnswerView {...item} />
+                {conversationId && item.messageId && item.status === 'complete' && item.queries.some((q) => q.ok) && (
+                  <SaveQuestionButton conversationId={conversationId} answerMessageId={item.messageId} />
+                )}
               </li>
             ),
           )}

@@ -6,6 +6,8 @@ export type ChatItem =
   | {
       kind: 'answer';
       id: string;
+      /** The stored Answer message id, once known (needed to save it as a Saved Question). */
+      messageId?: string;
       status: 'complete' | 'failed' | 'pending';
       error?: string;
       progress?: string;
@@ -22,6 +24,7 @@ export function toChatItems(messages: ConversationMessage[]): ChatItem[] {
       : {
           kind: 'answer',
           id: m.id,
+          messageId: m.id,
           status: m.answer.status,
           ...(m.answer.error ? { error: m.answer.error } : {}),
           blocks: m.answer.blocks,
