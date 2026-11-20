@@ -28,3 +28,10 @@ export class NotFoundError extends AppError {
     super('not_found', message);
   }
 }
+
+/** Demoting this admin would leave the workspace with no admins. */
+export class LastAdminError extends AppError {
+  constructor() {
+    super('last_admin', 'The last admin cannot be demoted. Promote someone else first.');
+  }
+}

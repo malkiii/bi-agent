@@ -68,8 +68,8 @@ src/
   core/            App Core: transport-agnostic use cases. The main test seam.
     index.ts       createAppCore(deps), prepareDatabase(db), public types and errors
     ports.ts       Clock, SlackGateway, LanguageModelProvider
-    errors.ts      AppError subclasses (WrongWorkspaceError, ForbiddenError, NotFoundError)
-    users/         Slack sign-in, roles, requireAdmin
+    errors.ts      AppError subclasses (WrongWorkspaceError, ForbiddenError, NotFoundError, LastAdminError)
+    users/         Slack sign-in, roles (list, setRole), requireAdmin
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
   adapters/        Production implementations of ports (system clock, ...)
   server/          Process wiring shared by web and worker: env config, bootstrap()
