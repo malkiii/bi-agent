@@ -82,12 +82,23 @@ export class AnswerDraft {
 }
 
 /** A Table block from a query result, cut to `TABLE_BLOCK_MAX_ROWS`. */
-export function tableBlock(result: QueryResult, title?: string): ResultBlock {
+export function tableBlock(result: QueryResult, title?: string, resultId?: string): ResultBlock {
   return {
     type: 'table',
     ...(title ? { title } : {}),
+    ...(resultId ? { resultId } : {}),
     columns: result.columns,
     rows: result.rows.slice(0, TABLE_BLOCK_MAX_ROWS),
     truncated: result.truncated || result.rows.length > TABLE_BLOCK_MAX_ROWS,
+  };
+}
+
+/** The result with only the named columns, in that order. Names must exist. */
+export function selectColumns(result: QueryResult, names: readonly string[]): QueryResult {
+  const indexes = names.map((name) => result.columns.findIndex((c) => c.name === name));
+  return {
+    ...result,
+    columns: indexes.map((i) => result.columns[i]!),
+    rows: result.rows.map((row) => indexes.map((i) => row[i])),
   };
 }

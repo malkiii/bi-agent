@@ -17,6 +17,12 @@ export interface TextBlock {
 export interface TableBlock {
   type: 'table';
   title?: string;
+  /**
+   * The query result this table shows (`ExecutedQuery.resultId`), with `columns` naming the
+   * selected columns in order. Lets Pinned Queries rebuild the block from fresh rows.
+   * Missing on Answers stored before Pinned Queries existed.
+   */
+  resultId?: string;
   columns: ResultColumn[];
   /** One array per row, values in `columns` order. At most `TABLE_BLOCK_MAX_ROWS`. */
   rows: unknown[][];

@@ -10,7 +10,7 @@ export type WireAnswer = Omit<Answer, 'startedAt' | 'finishedAt'> & { startedAt:
 export type ChatStreamEvent =
   | { type: 'conversation'; id: string }
   | AnswerEvent
-  | { type: 'answer'; answer: WireAnswer }
+  | { type: 'answer'; answer: WireAnswer; /** The stored Answer message (for saving it as a Saved Question). */ messageId?: string }
   | { type: 'error'; message: string };
 
 export interface ChatRequest {
