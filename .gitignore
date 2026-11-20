@@ -6,3 +6,8 @@ node_modules/
 .claude/settings.local.json
 data/
 *.log
+dist/
+.vitest/
+*.tsbuildinfo
+next-env.d.ts
+caddy-root.crt

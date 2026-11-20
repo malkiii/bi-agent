@@ -1,0 +1,44 @@
+{
+  "name": "bi-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "dev:worker": "tsx watch --env-file-if-exists=.env src/worker/main.ts",
+    "build": "next build && npm run build:worker",
+    "build:worker": "node scripts/build-worker.mjs",
+    "start": "next start",
+    "start:worker": "node dist/worker.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "typecheck": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "ai": "^7.0.177",
+    "mongodb": "^7.9.1",
+    "next": "^16.4.6",
+    "next-auth": "5.0.0-beta.32",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@testcontainers/mongodb": "^12.2.2",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.6",
+    "testcontainers": "^12.2.2",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}
