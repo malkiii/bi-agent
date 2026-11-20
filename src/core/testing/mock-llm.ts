@@ -1,6 +1,6 @@
 import { simulateReadableStream } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
-import type { LanguageModelProvider } from '../ports';
+import type { LanguageModelProvider, LlmChoice, LlmOptions } from '../ports';
 
 type GenerateResult = Awaited<ReturnType<MockLanguageModelV4['doGenerate']>>;
 type StreamResult = Awaited<ReturnType<MockLanguageModelV4['doStream']>>;
@@ -22,12 +22,26 @@ export type ScriptedTurn =
  * (the last turn repeats once the script runs out; an empty script makes every call fail).
  * `model.doGenerateCalls` / `model.doStreamCalls` hold the prompts the model received
  * (the App Core agent loop streams).
+ * `configure(...)` sets the environment's default and configured providers (none by default);
+ * `choices` records the LLM choice passed with each `getModel` call.
  */
 export class MockLlm implements LanguageModelProvider {
   model = new MockLanguageModelV4({ doGenerate: () => Promise.reject(new Error('MockLlm: no turns scripted')) });
 
-  async getModel() {
+  choices: (LlmChoice | undefined)[] = [];
+  private llmOptions: LlmOptions = { default: null, providers: [] };
+
+  async getModel(choice?: LlmChoice) {
+    this.choices.push(choice);
     return this.model;
+  }
+
+  options(): LlmOptions {
+    return this.llmOptions;
+  }
+
+  configure(options: LlmOptions): void {
+    this.llmOptions = options;
   }
 
   script(...turns: ScriptedTurn[]): MockLanguageModelV4 {

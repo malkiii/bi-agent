@@ -10,11 +10,13 @@ import { createPreferences, ensurePreferenceIndexes, type Preferences } from './
 import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
 import { createConversations, ensureConversationIndexes, type Conversations } from './conversations/conversations';
+import { createLlmSettings, withActiveChoice, type LlmSettings } from './llm-settings/llm-settings';
 
 export * from './errors';
 export type * from './ports';
 export type { Role, SlackIdentity, User } from './users/users';
 export type { ThemePreference } from './preferences/preferences';
+export type { LlmSettingsView } from './llm-settings/llm-settings';
 export type {
   CatalogDataset,
   ConnectionTestInput,
@@ -58,6 +60,7 @@ export interface AppCore {
   preferences: Preferences;
   dataSources: DataSources;
   conversations: Conversations;
+  llmSettings: LlmSettings;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
@@ -69,6 +72,7 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     drivers: deps.drivers,
     secretBox: createSecretBox(deps.config.encryptionKey),
   });
+  const llmSettings = createLlmSettings({ db: deps.db, clock: deps.clock, users, llm: deps.llm });
   return {
     users,
     preferences: createPreferences(deps),
@@ -76,10 +80,11 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     conversations: createConversations({
       db: deps.db,
       clock: deps.clock,
-      llm: deps.llm,
+      llm: withActiveChoice(deps.llm, llmSettings),
       dataSources,
       onAgentError: deps.onAgentError,
     }),
+    llmSettings,
   };
 }
 

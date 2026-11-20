@@ -43,7 +43,7 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 | `WEB_PORT` | compose | Host port for plain-http `web`. Default 3000. |
 | `SITE_ADDRESS` | compose (caddy) | Hostname for the `https` profile. |
 | `LLM_PROVIDER`, `LLM_MODEL` | web, worker | Default LLM: `anthropic`, `openai`, `google`, `openrouter`, `groq` or `ollama`, plus a model id of that provider. Unset = Answers fail with a friendly message. |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY` | web, worker | Provider keys. The key for `LLM_PROVIDER` is required; the others are kept for switching providers later. |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY` | web, worker | Provider keys. The key for `LLM_PROVIDER` is required; admins can switch to any provider with a key at `/admin/llm`. |
 | `OLLAMA_BASE_URL` | web, worker | Ollama API URL ending in `/api`. Default `http://localhost:11434/api` (from compose: `http://host.docker.internal:11434/api`). |
 
 Process config is parsed and validated in `src/server/config.ts`. Add new variables there and to `.env.example`.
@@ -77,6 +77,7 @@ src/
     secret-box.ts  AES-256-GCM sealing of secrets under ENCRYPTION_KEY
     users/         Slack sign-in, roles (list, setRole), requireAdmin
     preferences/   Per-user UI preferences (theme)
+    llm-settings/  The active LLM provider and model (admin override in Mongo `settings`, else the env default)
     data-sources/  driver.ts (the driver contract types), data-sources.ts (admin CRUD, test, introspect, Exposed Datasets, withDriver)
     conversations/ answer.ts (Answer + Result Block model, AnswerEvent), conversations.ts (startWeb, ask, get, list)
     agent/         The agent loop: agent.ts (runAgent), tools.ts (toolkits), catalog.ts (what the agent may query), answer-draft.ts
@@ -160,8 +161,8 @@ Every transport answers through one App Core use case, `core.conversations.ask(a
 - **Tools** come in toolkits (`src/core/agent/tools.ts`). A toolkit is `(ctx: { catalog, answer }) => { tools, instructions? }`, and `builtInToolkits` lists them: `catalogToolkit` (`listDatasets`, `describeDataset`), `queryToolkit` (`runQuery`) and `emitToolkit` (`emitText`, `emitTable`). To add `emitChart` or `combineResults`, write a toolkit that reads results with `answer.result(resultId)` and adds blocks with `answer.addBlock(...)`, then add it to `builtInToolkits`.
 - **runQuery** runs through the Data Source's driver (read-only enforcement stays in the driver). `QueryRejectedError`, `QueryFailedError` and `QueryTimeoutError` messages go back to the model as `{ ok: false, error, attemptsLeft }` so it can fix the query. After `MAX_FAILED_QUERIES` (4) failures in one Answer it stops running queries. The model sees 20 preview rows. The full result stays in the draft under its `resultId` for the emit tools. MongoDB sources take the query as a JSON string.
 - **Which Data Sources** (`src/core/agent/catalog.ts`): only Data Sources with Exposed Datasets, and only those Datasets. `createAgentCatalog(dataSources, { onlyDataSourceIds })` is where the Conversation lock (web) and Channel Default (Slack) plug in.
-- **LLM**: `LanguageModelProvider` (port) is built from `LLM_PROVIDER`/`LLM_MODEL` in `src/adapters/llm.ts`. `ServerConfig.llm.credentials` keeps every configured provider, ready for the admin provider switch.
-- **Tests** script the model with `h.llm.script(...)`. Each turn serves both `doGenerate` and `doStream`, and `h.llm.model.doStreamCalls[n].prompt` shows what the model received. See `src/core/conversations/conversations.test.ts` (real Postgres + Mongo).
+- **LLM**: `LanguageModelProvider` (port, `src/adapters/llm.ts`) builds a model for an `LlmChoice` `{ provider, model }` and reports `options()`: the env default (`LLM_PROVIDER`/`LLM_MODEL`) and every provider with a key. Admins override the choice at `/admin/llm` (`core.llmSettings.get/set/reset`, admin-only). It's stored in Mongo (`settings`, `_id: 'llm'`) and read on **every** Prompt, so web and worker switch without a restart. An override whose provider lost its key falls back to the default. Use cases that call the LLM must take it from the App Core's wrapped provider (as `conversations` does), never from `deps.llm` directly.
+- **Tests** script the model with `h.llm.script(...)`; `h.llm.configure({ default, providers })` sets the env LLM options and `h.llm.choices` records the choice each Prompt used. Each turn serves both `doGenerate` and `doStream`, and `h.llm.model.doStreamCalls[n].prompt` shows what the model received. See `src/core/conversations/conversations.test.ts` (real Postgres + Mongo).
 
 Web chat: `/chat` (new Conversation + recent list) and `/chat/[id]` (reopen). `POST /api/chat` `{ conversationId?, prompt }` streams NDJSON `ChatStreamEvent`s (`conversation`, the `AnswerEvent`s, then `answer` or `error`). See `src/web/chat/wire.ts`.
 
