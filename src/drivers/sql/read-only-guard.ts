@@ -25,20 +25,27 @@ const FORBIDDEN_WORDS = new Set([
 /**
  * Extra words per flavour. T-SQL needs no semicolon between statements, so `SELECT 1 COMMIT`
  * is two statements: refuse the statement keywords that are not already covered above.
- * MySQL: server file reads and advisory locks that outlive the query on a pooled connection.
+ * MySQL: server file reads, advisory locks that outlive the query on a pooled connection, and
+ * MariaDB sequence functions (a sequence advance survives the rollback).
  */
 const FLAVOUR_FORBIDDEN_WORDS: Record<SqlFlavour, ReadonlySet<string>> = {
   postgresql: new Set(),
   duckdb: new Set(),
-  mysql: new Set(['load_file', 'get_lock', 'handler']),
+  mysql: new Set(['load_file', 'get_lock', 'handler', 'nextval', 'setval']),
   tsql: new Set([
     'waitfor', 'commit', 'rollback', 'begin', 'save', 'use', 'receive', 'reconfigure', 'checkpoint',
     'revert', 'setuser', 'goto', 'raiserror', 'throw', 'writetext', 'updatetext', 'readtext', 'openxml',
   ]),
 };
 
-/** Word pairs refused in every flavour (row-locking clauses whose words alone are harmless). */
-const FORBIDDEN_PAIRS: readonly [string, string][] = [['for', 'share']];
+/**
+ * Word pairs refused in every flavour, whose words alone are harmless: row locking, and
+ * `NEXT VALUE FOR` (SQL Server, MariaDB), which advances a sequence even if the transaction rolls back.
+ */
+const FORBIDDEN_PAIRS: readonly [string, string][] = [
+  ['for', 'share'],
+  ['next', 'value'],
+];
 
 interface Token {
   kind: 'word' | 'semicolon' | 'other';
@@ -119,7 +126,7 @@ function tokenize(sql: string, flavour: SqlFlavour): Token[] {
       if (flavour === 'mysql' && /^\/\*M?!/.test(sql.slice(i, i + 4))) {
         throw new QueryRejectedError('Executable comments (/*! ... */) are not allowed; remove them.');
       }
-      i =skipBlockComment(sql, i, dollarQuotes) ?? unterminated('comment');
+      i = skipBlockComment(sql, i, dollarQuotes) ?? unterminated('comment');
     } else if (c === "'") {
       const backslashes = flavour === 'mysql' || isEscapeStringPrefix(tokens, i);
       i = push('other', i, skipQuoted(sql, i, "'", backslashes) ?? unterminated('string'));

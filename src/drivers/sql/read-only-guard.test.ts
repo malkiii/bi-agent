@@ -40,6 +40,7 @@ describe('T-SQL (statements need no semicolon between them)', () => {
     'keywords inside strings and comments': "SELECT 'drop; delete' AS x -- exec\n/* waitfor */",
     'a CTE with OPTION': 'WITH n AS (SELECT 1 AS i) SELECT i FROM n OPTION (MAXRECURSION 0)',
     'FOR JSON': 'SELECT id FROM orders FOR JSON PATH',
+    'OFFSET ... FETCH NEXT': 'SELECT id FROM orders ORDER BY id OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY',
   });
 });
 
@@ -61,7 +62,9 @@ describe('MySQL / MariaDB', () => {
     'a versioned executable comment': 'SELECT * FROM orders /*!80000 FOR UPDATE */',
     'INTO OUTFILE after "--" with no space (minus minus, not a comment)':
       "SELECT 1 --1 INTO OUTFILE '/tmp/x'",
-    'a MariaDB executable comment':'SELECT * FROM orders /*M! FOR UPDATE */',
+    'a MariaDB executable comment': 'SELECT * FROM orders /*M! FOR UPDATE */',
+    'MariaDB NEXTVAL (advances a sequence)': 'SELECT NEXTVAL(order_seq)',
+    'MariaDB SETVAL': 'SELECT SETVAL(order_seq, 1)',
   });
   accepts('mysql', {
     'backtick-quoted keyword names': 'SELECT `delete`, `update` FROM `orders`',
@@ -76,6 +79,10 @@ describe('every flavour', () => {
   for (const flavour of ['postgresql', 'mysql', 'tsql', 'duckdb'] as const) {
     test(`${flavour}: FOR SHARE locking is refused`, () => {
       expect(() => assertReadOnlySql('SELECT * FROM orders FOR SHARE', flavour)).toThrow(QueryRejectedError);
+    });
+    // A rollback does not undo a sequence (SQL Server has no read-only transaction to stop it).
+    test(`${flavour}: NEXT VALUE FOR a sequence is refused`, () => {
+      expect(() => assertReadOnlySql('SELECT NEXT VALUE FOR dbo.order_seq', flavour)).toThrow(QueryRejectedError);
     });
   }
 });

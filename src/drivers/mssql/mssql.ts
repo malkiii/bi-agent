@@ -1,7 +1,7 @@
 /**
  * SQL Server driver. SQL Server has no read-only transaction, so enforcement is:
  * 1. assertReadOnlySql(query, 'tsql'): one SELECT/WITH statement and no write, EXEC, SELECT INTO,
- *    OPENROWSET/OPENQUERY, WAITFOR or transaction keyword. T-SQL needs no semicolon between
+ *    OPENROWSET/OPENQUERY, WAITFOR, NEXT VALUE FOR or transaction keyword. T-SQL needs no semicolon between
  *    statements, so the guard refuses every statement keyword, not just `;`.
  * 2. The query runs inside a transaction that is always rolled back.
  * 3. A client timer cancels the request at the timeout; rows are streamed and the request is
@@ -41,7 +41,8 @@ export const MSSQL_DIALECT: Dialect = {
   guidance:
     'Microsoft SQL Server (T-SQL). Write one SELECT or WITH statement. Use TOP n or OFFSET ... FETCH (there is ' +
     'no LIMIT). Quote identifiers with square brackets (e.g. dbo.[Big Deals]), strings with single quotes. Use ' +
-    'DATETRUNC() or FORMAT() for periods, CAST(x AS decimal(18,2)) for division, and + or CONCAT() for strings.',
+    "DATEFROMPARTS(YEAR(d), MONTH(d), 1) or FORMAT(d, 'yyyy-MM') for periods (DATETRUNC needs SQL Server 2022), " +
+    'CAST(x AS decimal(18,2)) for division, and + or CONCAT() for strings.',
 };
 
 /** INFORMATION_SCHEMA / result column type name to a normalised type. */
@@ -160,7 +161,8 @@ export function createMssqlDriver(connection: MssqlConnection): DataSourceDriver
     user: connection.user,
     password: connection.password,
     connectionTimeout: 10_000,
-    // The client timer below cancels queries; this is only a backstop.
+    // Off: SQL Server has no per-statement server timeout, so the client timer in readOnly()
+    // cancels the request (a TDS attention, which stops it on the server) at the query's timeout.
     requestTimeout: 0,
     pool: { max: 3, min: 0, idleTimeoutMillis: 30_000 },
     options: {
