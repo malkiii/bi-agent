@@ -2,7 +2,10 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { QueryFailedError, QueryRejectedError, type DataSourceDriver } from '@/core/data-sources/driver';
 import { describeDriverContract } from '../contract/driver-contract';
 import { createMssqlDriver } from './mssql';
+import { startTestServers } from '../sql/test-server';
 import { CONTRACT_FIXTURE_SQL, createMssqlTestDatabase, type MssqlTestDatabase } from './testing';
+
+startTestServers('mssql');
 
 const COUNT_TO = (n: number) =>
   `WITH n AS (SELECT 1 AS i UNION ALL SELECT i + 1 FROM n WHERE i < ${n}) SELECT i FROM n OPTION (MAXRECURSION 0)`;

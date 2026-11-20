@@ -2,7 +2,10 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { QueryFailedError, QueryRejectedError, type DataSourceDriver } from '@/core/data-sources/driver';
 import { describeDriverContract } from '../contract/driver-contract';
 import { createMysqlDriver } from './mysql';
+import { startTestServers } from '../sql/test-server';
 import { CONTRACT_FIXTURE_SQL, createMysqlTestDatabase, type MysqlTestDatabase } from './testing';
+
+startTestServers('mysql', 'mariadb');
 
 for (const server of ['mysql', 'mariadb'] as const) {
   describeDriverContract({
