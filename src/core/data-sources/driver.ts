@@ -107,7 +107,37 @@ export interface DriverKind<TConfig = Record<string, unknown>, TSecrets = Record
   fields: readonly DriverField[];
   configSchema: z.ZodType<TConfig>;
   secretsSchema: z.ZodType<TSecrets>;
-  create(config: TConfig, secrets: TSecrets): DataSourceDriver;
+  create(config: TConfig, secrets: TSecrets, context?: DriverContext<TSecrets>): DataSourceDriver;
+  /** Present for kinds connected through an OAuth consent screen (Salesforce) rather than typed credentials. */
+  oauth?: DriverOAuth<TConfig, TSecrets>;
+}
+
+/** What the App Core offers a driver it creates for a saved Data Source. */
+export interface DriverContext<TSecrets = Record<string, string>> {
+  /**
+   * Merges `update` into the Data Source's sealed secrets, e.g. OAuth tokens refreshed by
+   * the driver. A no-op for drivers that are not tied to a saved Data Source (an unsaved test).
+   */
+  saveSecrets(update: Partial<TSecrets>): Promise<void>;
+}
+
+/**
+ * OAuth authorization-code flow with PKCE for a kind. The App Core owns the state, the
+ * verifier and the token storage; the kind only knows its provider's endpoints.
+ * Secrets that are not form fields (the tokens) are dropped when the config changes.
+ */
+export interface DriverOAuth<TConfig, TSecrets> {
+  /** e.g. 'Salesforce', for "Connect to Salesforce". */
+  providerLabel: string;
+  /** The provider's consent screen URL. */
+  authorizationUrl(config: TConfig, request: { redirectUri: string; state: string; codeChallenge: string }): string;
+  /** Exchanges the code for tokens, returned as secrets to merge. Throws OAuthError with a readable message. */
+  exchangeCode(
+    config: TConfig,
+    secrets: TSecrets,
+    request: { code: string; codeVerifier: string; redirectUri: string },
+  ): Promise<Partial<TSecrets>>;
+  isConnected(secrets: TSecrets): boolean;
 }
 
 /** The kinds the App Core can manage, keyed by `DriverKind.kind`. */
@@ -133,5 +163,16 @@ export class QueryTimeoutError extends AppError {
 export class QueryFailedError extends AppError {
   constructor(message: string) {
     super('query_failed', message);
+  }
+}
+
+/** An OAuth connect attempt failed (refused consent, bad client credentials, expired state). */
+export class OAuthError extends AppError {
+  constructor(
+    message: string,
+    /** The Data Source being connected, when known, so the UI can return to it. */
+    readonly dataSourceId?: string,
+  ) {
+    super('oauth_failed', message);
   }
 }

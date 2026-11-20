@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { AppError, ValidationError, type ConnectionTestResult, type DataSourceInput } from '@/core';
 import { builtInDrivers } from '@/drivers';
 import { requireUser } from '@/web/current-user';
+import { oauthCallbackUrl } from '@/web/oauth';
 import { getCore } from '@/web/server-runtime';
 
 /** Data Source admin actions. /admin is admin-only in the proxy, and the App Core checks again. */
@@ -108,4 +109,20 @@ export async function deleteDataSource(formData: FormData) {
   }
   revalidatePath(BASE);
   redirect(BASE);
+}
+
+/** OAuth kinds (Salesforce): send the admin to the provider's consent screen. */
+export async function connectDataSource(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('id'));
+  let url: string;
+  try {
+    ({ url } = await (await getCore()).dataSources.startOAuth(user.slackUserId, id, {
+      redirectUri: await oauthCallbackUrl(),
+    }));
+  } catch (error) {
+    if (!(error instanceof AppError)) throw error;
+    redirect(`${BASE}/${id}?error=${encodeURIComponent(error.message)}`);
+  }
+  redirect(url);
 }
