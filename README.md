@@ -83,6 +83,8 @@ src/
     postgres/      postgres.ts (driver + kind), testing.ts (per-test databases), postgres.test.ts
     mysql/         MySQL and MariaDB (kind `mysql`); the contract runs against both servers
     mssql/         SQL Server (kind `mssql`)
+    mongodb/       mongodb.ts (driver + kind), testing.ts (per-test databases), mongodb.test.ts
+    salesforce/    salesforce.ts (SOQL driver + OAuth kind), testing.ts (fake Salesforce HTTP server)
   server/          Process wiring shared by web and worker: env config, bootstrap()
   worker/          Worker process: main.ts (entry), worker.ts (startWorker)
   web/             Web-only code: auth helpers, server runtime, components
@@ -158,6 +160,16 @@ Read-only enforcement lives in the driver, so no caller can bypass it. For SQL, 
 - **MySQL / MariaDB** (`mysql`): `multipleStatements: false`, `START TRANSACTION READ ONLY` (always rolled back). A client timer runs `KILL QUERY` from a separate connection at the timeout, with `max_execution_time` (MySQL) or `max_statement_time` (MariaDB) a second later as a backstop. Rows are streamed; at `maxRows + 1` the query is killed and the connection dropped. The guard also refuses executable comments (`/*! */`), `LOAD_FILE`, `GET_LOCK` and treats `--` as a comment only when whitespace follows (MySQL rules). Dates stay text (`dateStrings`); Datasets are the tables and views of the configured database, with ids like `orders` or `` `Big Deals` ``.
 - **SQL Server** (`mssql`): no read-only transactions, so the query runs in a transaction that is always rolled back, and admins should use a `db_datareader`-only login. T-SQL needs no semicolon between statements, so the guard (`tsql`) also refuses statement keywords such as `WAITFOR`, `COMMIT`, `BEGIN`, `USE`, `RECEIVE` anywhere. A client timer cancels the request at the timeout; rows are streamed and the request is cancelled at `maxRows + 1`. Only the first result set is returned. Zone-less dates (`date`, `datetime2`, …) come back as text, `datetimeoffset` as a `Date`; `decimal` values arrive as JS numbers (tedious has no exact mode). Ids look like `dbo.orders`, `dbo.[Big Deals]`.
 
+**MongoDB** (`src/drivers/mongodb/mongodb.ts`) takes a structured query instead of a string: `{ find: '<collection>', filter?, projection?, sort?, skip?, limit? }` or `{ aggregate: '<collection>', pipeline: [...] }`. Nothing else is accepted (no other command, no extra option), and `$out`, `$merge`, `$function`, `$where`, `$accumulator` and `$changeStream` are refused wherever they appear, including nested `$lookup`/`$facet` pipelines, `$expr` and projections. Values may be written as Extended JSON (`{ "$date": "…" }`, `{ "$oid": "…" }`). `maxTimeMS` enforces the timeout, and only `maxRows + 1` documents are fetched. Documents are flattened into columns and rows:
+
+- each document is a row, and each field path is a column, in the order the paths first appear across the documents (`_id` first);
+- non-empty subdocuments are flattened into dotted paths (`address.city`); arrays and empty subdocuments stay as JSON values (`json`);
+- a field a document lacks is `null`;
+- `ObjectId` and UUIDs become hex strings, `Decimal128`/`Long` follow the exact-number rule, dates stay `Date`s;
+- a column's type is the one type its values share. Integers mixed with doubles are `number`, and any other mix is `other`.
+
+Introspection applies the same rule to a `$sample` of 100 documents per collection (sorted by `_id`). `nativeType` lists the BSON types seen (e.g. `double|int`), and a column is nullable when a sampled document lacks it or holds null. Views are listed with `kind: 'view'`, and `system.*` collections are skipped.
+
 A `DriverKind` registers a driver with the App Core. It has `kind`, `label`, `fields` (form descriptors; `secret: true` fields are encrypted and only ever returned as "set" flags), zod `configSchema`/`secretsSchema`, and `create(config, secrets)`. The admin form renders from `fields`, so a simple kind needs no UI code. App Core code gets a driver with `core.dataSources.withDriver(id, fn)`, which decrypts the credentials and closes the driver afterwards.
 
 ### Adding a kind (MySQL, SQL Server, MongoDB, Salesforce, Uploads)
@@ -176,5 +188,23 @@ A `DriverKind` registers a driver with the App Core. It has `kind`, `label`, `fi
    });
    ```
 
-   Add tests for anything kind-specific (views, type mapping, quoting) in the same file.
+   `queries` are written in the kind's own language (Mongo passes structured objects). A kind whose Datasets always carry an extra column (Mongo's `_id`) passes `implicitColumns: ['_id']`: introspection must still list it, but it is left out of the fixture comparison. Add tests for anything kind-specific (views, type mapping, quoting) in the same file.
 4. Register the kind in `builtInDrivers` (`src/drivers/index.ts`). The admin UI ("Add <label>") and the App Core pick it up from there.
+
+### OAuth kinds and token refresh
+
+A kind connected through a consent screen sets `DriverKind.oauth` (`authorizationUrl`, `exchangeCode`, `isConnected`). The App Core owns the flow: `dataSources.startOAuth(actor, id, { redirectUri })` stores a single-use state with the PKCE verifier (Mongo `oauthStates`, 10-minute expiry, bound to the admin who started it) and returns the provider URL. The callback route `GET /api/admin/data-sources/oauth/callback` calls `dataSources.completeOAuth`, which exchanges the code and seals the tokens with the other secrets. Tokens are secrets that aren't form fields, so they're never shown, and they're dropped when an edit changes the config (another org or app means reconnecting). The callback URL is built from `AUTH_URL`.
+
+`DriverKind.create(config, secrets, context)` gets a `context.saveSecrets(update)` when the driver belongs to a saved Data Source. Drivers call it to persist refreshed tokens.
+
+### Salesforce
+
+`src/drivers/salesforce/salesforce.ts`: SOQL over REST (API `v68.0` by default) as the integration user, using plain `fetch`.
+
+- **Setup:** in Salesforce, create an **External Client App** (Connected Apps can't be created any more). Enable OAuth, require PKCE, use the scopes `api refresh_token`, set the callback to `$AUTH_URL/api/admin/data-sources/oauth/callback`, and set the refresh token policy to "valid until revoked". In Botley, add a Salesforce Data Source with the login URL (`https://login.salesforce.com`, `https://test.salesforce.com` or a My Domain URL) and the consumer key and secret. Then click **Connect to Salesforce** on its page and sign in as a read-only integration user.
+- **Read-only:** the driver only sends GETs (query, sobjects, describe). `assertReadOnlySoql` accepts one `SELECT` with no `;` and refuses `FOR UPDATE`, `FOR VIEW`, `FOR REFERENCE` and `UPDATE TRACKING|VIEWSTAT`, because those lock records or write stats.
+- **Limits:** pages are fetched through `nextRecordsUrl` until `maxRows + 1` records have arrived. One abort signal covers every page and any refresh, so the timeout applies to the whole query.
+- **Tokens:** on a 401 the driver refreshes once (shared between concurrent calls), retries, and persists the new access token (and a rotated refresh token) through `saveSecrets`. `invalid_grant` becomes "Reconnect the Data Source".
+- **Results:** `attributes` are stripped. Parent relationships become dot-path columns (`Owner.Name`) and child subqueries become JSON arrays. Column types are inferred from the values, because SOQL results carry no column metadata. An empty result takes its column names from the SELECT list, and `SELECT COUNT() FROM X` returns one `count` row.
+- **Introspection:** queryable objects, minus `*History`, `*Share`, `*Feed` and `*ChangeEvent`, each described with up to 6 parallel GETs. Each object is a Dataset with `kind: 'object'`, `schema: null` and `id` set to the API name.
+- **Tests:** `src/drivers/salesforce/testing.ts` starts a fake org over real HTTP (OAuth token endpoint with PKCE checks, query paging, describe, 401s and revoked refresh tokens). The whole driver contract runs against it. Its SQL-specific parts carry over as follows: "forbidden" uses DML text, `;` chaining and the side-effect clauses above, and `countOrders` reads the fake's fixed records, since the fake answers only GET. A kind-specific test checks that refused queries never reach the server. The OAuth flow is tested through the App Core in `src/core/data-sources/oauth.test.ts`.

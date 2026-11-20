@@ -9,7 +9,9 @@
  *
  *   (1, 'north', 10.5), (2, 'south', 20), (3, 'north', 7.25)
  *
- * and `queries` are written in the driver's own language.
+ * and `queries` are written in the driver's own language. Kinds whose Datasets always carry
+ * a column of their own (MongoDB's `_id`) name it in `implicitColumns`; introspection must
+ * still list it, but it is left out of the fixture column comparison.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import {
@@ -47,10 +49,12 @@ export interface DriverContractFixture {
 export interface DriverContractOptions {
   kind: string;
   queries: DriverContractQueries;
+  /** Columns every Dataset of this kind has besides the fixture's (e.g. Mongo's `_id`). */
+  implicitColumns?: readonly string[];
   setup(): Promise<DriverContractFixture>;
 }
 
-export function describeDriverContract({ kind, queries, setup }: DriverContractOptions) {
+export function describeDriverContract({ kind, queries, implicitColumns = [], setup }: DriverContractOptions) {
   describe(`${kind} driver contract`, () => {
     let f: DriverContractFixture;
 
@@ -86,7 +90,10 @@ export function describeDriverContract({ kind, queries, setup }: DriverContractO
 
       expect(orders).toBeDefined();
       expect(orders!.id).not.toBe('');
-      expect(orders!.columns.map(({ name, type }) => ({ name, type }))).toEqual([
+      const names = orders!.columns.map((c) => c.name);
+      expect(names).toEqual(expect.arrayContaining([...implicitColumns]));
+      const fixtureColumns = orders!.columns.filter((c) => !implicitColumns.includes(c.name));
+      expect(fixtureColumns.map(({ name, type }) => ({ name, type }))).toEqual([
         { name: 'id', type: 'integer' },
         { name: 'region', type: 'string' },
         { name: 'amount', type: 'number' },
