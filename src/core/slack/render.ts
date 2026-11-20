@@ -1,7 +1,7 @@
 /**
  * Slack rendering: pure functions from the Answer model to Block Kit, plus the Prompt text
  * clean-up for incoming Slack messages. No I/O here: what has to be uploaded (chart PNGs, the
- * CSV/XLSX of long tables) comes back as `attachments`, and the Slack bot makes and uploads the files.
+ * CSV/XLSX of long tables) comes back as `uploads`, and the Slack bot makes and uploads the files.
  *
  * Slack limits that shape this module: 50 blocks per message, 3 000 chars per mrkdwn section,
  * Table blocks of at most 100 rows / 20 columns / 10 000 chars, and one Table block per message
@@ -33,10 +33,10 @@ export interface RenderedMessage {
 }
 
 /** A file to upload in the thread after the Answer: a chart as PNG, or a long table as CSV + XLSX. */
-export type AnswerAttachment = { kind: 'chart'; block: ChartBlock } | { kind: 'table'; block: TableBlock };
+export type ThreadUpload = { kind: 'chart'; block: ChartBlock } | { kind: 'table'; block: TableBlock };
 
 export interface RenderedAnswer extends RenderedMessage {
-  attachments: AnswerAttachment[];
+  uploads: ThreadUpload[];
 }
 
 const section = (text: string): SlackBlock => ({ type: 'section', text: { type: 'mrkdwn', text } });
@@ -47,10 +47,10 @@ const context = (text: string): SlackBlock => ({ type: 'context', elements: [{ t
  * (where a Fork of this Conversation is opened) adds an "Open in dashboard" link.
  */
 export function renderAnswer(answer: Answer, { answerId, dashboardUrl }: { answerId: string; dashboardUrl?: string }): RenderedAnswer {
-  if (answer.status === 'failed') return { ...renderFailure(answer.error ?? 'Sorry, something went wrong.'), attachments: [] };
+  if (answer.status === 'failed') return { ...renderFailure(answer.error ?? 'Sorry, something went wrong.'), uploads: [] };
 
   const blocks: SlackBlock[] = [];
-  const attachments: AnswerAttachment[] = [];
+  const uploads: ThreadUpload[] = [];
   let tableBlockUsed = false;
   for (const block of answer.blocks) {
     switch (block.type) {
@@ -61,12 +61,12 @@ export function renderAnswer(answer: Answer, { answerId, dashboardUrl }: { answe
         const preview = isLong(block);
         blocks.push(...renderTable(block, !tableBlockUsed, preview));
         tableBlockUsed = true;
-        if (preview) attachments.push({ kind: 'table', block });
+        if (preview) uploads.push({ kind: 'table', block });
         break;
       }
       case 'chart':
         blocks.push(context(`:bar_chart: *${escape(block.title ?? 'Chart')}* (chart attached below)`));
-        attachments.push({ kind: 'chart', block });
+        uploads.push({ kind: 'chart', block });
         break;
       default:
         break; // Unknown Result Block kinds are skipped.
@@ -94,7 +94,7 @@ export function renderAnswer(answer: Answer, { answerId, dashboardUrl }: { answe
 
   const body = blocks.slice(0, MAX_BLOCKS - footer.length);
   if (body.length === 0) body.push(section('_(No result to show.)_'));
-  return { text: fallbackText(answer), blocks: [...body, ...footer], attachments };
+  return { text: fallbackText(answer), blocks: [...body, ...footer], uploads };
 }
 
 /** Too long to show whole in Slack: a preview plus attached files. */
@@ -158,7 +158,8 @@ function renderTable(table: TableBlock, asTableBlock: boolean, preview: boolean)
 
   if (preview) {
     const total = `${table.rows.length}${table.truncated ? '+' : ''}`;
-    out.push(context(`Showing ${rows.length} of ${total} rows. The full table is attached below as CSV and XLSX.`));
+    const files = table.truncated ? `The ${table.rows.length} rows Botley kept are` : 'The full table is';
+    out.push(context(`Showing ${rows.length} of ${total} rows. ${files} attached below as CSV and XLSX.`));
   }
   return out;
 }

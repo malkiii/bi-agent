@@ -24,8 +24,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ messageI
     if (error instanceof NotFoundError) return Response.json({ error: error.message }, { status: 404 });
     throw error;
   }
-  const block = answer.blocks[Number(index)];
-  if (!/^\d+$/.test(index) || block?.type !== 'table') return Response.json({ error: 'Table not found.' }, { status: 404 });
+  const block = /^\d+$/.test(index) ? answer.blocks[Number(index)] : undefined;
+  if (block?.type !== 'table') return Response.json({ error: 'Table not found.' }, { status: 404 });
 
   const body = format === 'csv' ? tableToCsv(block) : await tableToXlsx(block);
   const filename = tableFileName(block, format);

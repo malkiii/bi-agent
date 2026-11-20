@@ -44,8 +44,8 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
       </header>
       {slack && (
         <p className={styles.notice}>
-          <span className="tag">Slack</span> This Conversation happened in a Slack thread. Open it in the dashboard to continue
-          here as a Fork; the thread stays as it is.
+          <span className="tag">Slack</span> This Conversation happened in a Slack thread. Open it in the dashboard to ask
+          follow-ups here in a Fork; the thread stays as it is.
         </p>
       )}
       {conversation.forkedFrom && (

@@ -97,8 +97,8 @@ export interface Conversations {
   /** Like `list`, one page at a time and optionally only one Source. */
   history(actorSlackUserId: string, options?: HistoryOptions): Promise<HistoryPage>;
   /**
-   * A Fork: a new Web Conversation for `actor` that starts with a copy of a Slack
-   * Conversation's messages (so they are model context). The Slack Conversation is not
+   * A Fork: a new Web Conversation for `actor` that starts from a Slack Conversation's
+   * history (its messages are duplicated into the Fork, so they are model context). The Slack Conversation is not
    * touched. NotFoundError unless `actor` is a Participant; ValidationError for a non-Slack one.
    */
   fork(actorSlackUserId: string, slackConversationId: string): Promise<Conversation>;
@@ -273,9 +273,8 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
     async getVisibleAnswer(actor, answerMessageId) {
       const doc = await messages.findOne({ _id: answerMessageId, kind: 'answer' });
       if (!doc || doc.kind !== 'answer') throw new NotFoundError('Answer not found.');
-      await loadVisible(actor, doc.conversationId).catch(() => {
-        throw new NotFoundError('Answer not found.');
-      });
+      const visible = await conversations.countDocuments({ _id: doc.conversationId, participants: actor }, { limit: 1 });
+      if (!visible) throw new NotFoundError('Answer not found.');
       return doc.answer;
     },
 
@@ -313,8 +312,14 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
         const base = { ...m, _id: ids.get(m._id)!, conversationId: doc._id };
         return base.kind === 'answer' ? { ...base, promptId: ids.get(base.promptId) ?? base.promptId } : base;
       });
+      // Messages first: until the Conversation exists they are invisible; on failure, remove them.
       if (copies.length > 0) await messages.insertMany(copies);
-      await conversations.insertOne(doc);
+      try {
+        await conversations.insertOne(doc);
+      } catch (error) {
+        await messages.deleteMany({ conversationId: doc._id }).catch(() => undefined);
+        throw error;
+      }
       return toConversation(doc);
     },
   };

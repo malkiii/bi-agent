@@ -94,7 +94,7 @@ describe('renderAnswer', () => {
 
   test('tables of up to 15 rows are shown whole, with nothing attached', () => {
     const rows = Array.from({ length: 15 }, (_, i) => [i]);
-    const { blocks, attachments } = renderAnswer(
+    const { blocks, uploads } = renderAnswer(
       answer({ blocks: [{ type: 'table', columns: [{ name: 'n', type: 'integer' }], rows, truncated: false }] }),
       { answerId: 'a1' },
     );
@@ -102,13 +102,13 @@ describe('renderAnswer', () => {
     const table = blocks.find((b) => (b as { type: string }).type === 'table') as { rows: unknown[][] };
     expect(table.rows).toHaveLength(16);
     expect(blocks.filter((b) => (b as { type: string }).type === 'context')).toEqual([]);
-    expect(attachments).toEqual([]);
+    expect(uploads).toEqual([]);
   });
 
   test('tables longer than 15 rows show a 10-row preview and attach the full table as CSV and XLSX', () => {
     const rows = Array.from({ length: 40 }, (_, i) => [i]);
     const block = { type: 'table' as const, title: 'Numbers', columns: [{ name: 'n', type: 'integer' as const }], rows, truncated: false };
-    const { blocks, attachments } = renderAnswer(answer({ blocks: [block] }), { answerId: 'a1' });
+    const { blocks, uploads } = renderAnswer(answer({ blocks: [block] }), { answerId: 'a1' });
 
     const table = blocks.find((b) => (b as { type: string }).type === 'table') as { rows: unknown[][] };
     expect(table.rows).toHaveLength(11);
@@ -116,7 +116,7 @@ describe('renderAnswer', () => {
       type: 'context',
       elements: [{ type: 'mrkdwn', text: 'Showing 10 of 40 rows. The full table is attached below as CSV and XLSX.' }],
     });
-    expect(attachments).toEqual([{ kind: 'table', block }]);
+    expect(uploads).toEqual([{ kind: 'table', block }]);
   });
 
   test('a truncated query result says there were more rows', () => {
@@ -128,7 +128,7 @@ describe('renderAnswer', () => {
 
     expect(blocks).toContainEqual({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: 'Showing 10 of 20+ rows. The full table is attached below as CSV and XLSX.' }],
+      elements: [{ type: 'mrkdwn', text: 'Showing 10 of 20+ rows. The 20 rows Botley kept are attached below as CSV and XLSX.' }],
     });
   });
 
@@ -142,12 +142,12 @@ describe('renderAnswer', () => {
       data: [],
       truncated: false,
     };
-    const { blocks, attachments } = renderAnswer(answer({ blocks: [chart] }), { answerId: 'a1' });
+    const { blocks, uploads } = renderAnswer(answer({ blocks: [chart] }), { answerId: 'a1' });
 
     expect(blocks).toEqual([
       { type: 'context', elements: [{ type: 'mrkdwn', text: ':bar_chart: *Sales &lt;by&gt; region* (chart attached below)' }] },
     ]);
-    expect(attachments).toEqual([{ kind: 'chart', block: chart }]);
+    expect(uploads).toEqual([{ kind: 'chart', block: chart }]);
   });
 
   test('only the first table is a Table block; later ones are monospaced text', () => {

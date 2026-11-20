@@ -30,7 +30,7 @@ export default async function ForkPage({ params }: { params: Promise<{ id: strin
     <div className={`${styles.page} page-narrow`}>
       <header className={styles.hero}>
         <Botley size={96} />
-        <h1>Continue in the dashboard</h1>
+        <h1>Open in the dashboard</h1>
       </header>
       <section className="card">
         <p>
@@ -38,7 +38,7 @@ export default async function ForkPage({ params }: { params: Promise<{ id: strin
           {prompts === 1 ? 'Prompt' : 'Prompts'})
         </p>
         <p>
-          A Fork is a new web Conversation that starts with this thread&apos;s history, so Botley keeps the context. Nothing
+          A Fork is a new web Conversation that starts from this thread&apos;s history, so Botley keeps the context. Nothing
           you ask in it is posted to Slack, and the thread stays as it is.
         </p>
         <div className="actions">

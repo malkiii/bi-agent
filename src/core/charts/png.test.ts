@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { ChartBlock } from '../conversations/answer';
+import { DARK_CHART_PALETTE, LIGHT_CHART_PALETTE } from './chart';
 import { renderChartPng } from './png';
 
 const DATA = [
@@ -38,6 +39,16 @@ function pngSize(png: Uint8Array) {
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
+/** RGB of the top-left pixel (decoded by re-reading the PNG with resvg's image support). */
+async function cornerPixel(png: Uint8Array): Promise<number[]> {
+  const { Resvg } = await import('@resvg/resvg-js');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><image href="data:image/png;base64,${Buffer.from(png).toString('base64')}" width="1600" height="900"/></svg>`;
+  const { pixels } = new Resvg(svg).render();
+  return [...pixels.subarray(0, 3)];
+}
+
+const hex = (color: string) => [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+
 describe('renderChartPng', () => {
   test.each(CHARTS)('renders a %s chart to a PNG', async (kind, spec) => {
     const png = await renderChartPng(block(kind, spec));
@@ -46,6 +57,17 @@ describe('renderChartPng', () => {
     const { width, height } = pngSize(png);
     expect(width).toBeGreaterThanOrEqual(800);
     expect(height).toBeGreaterThan(300);
+  });
+
+  test('applies the theme: the background is the palette background', async () => {
+    const spec = { mark: 'bar', encoding: xy };
+    const [light, dark] = await Promise.all([
+      renderChartPng(block('bar', spec)),
+      renderChartPng(block('bar', spec), { palette: DARK_CHART_PALETTE }),
+    ]);
+
+    expect(await cornerPixel(light)).toEqual(hex(LIGHT_CHART_PALETTE.background));
+    expect(await cornerPixel(dark)).toEqual(hex(DARK_CHART_PALETTE.background));
   });
 
   test('renders a chart with no rows', async () => {

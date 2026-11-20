@@ -78,14 +78,18 @@ function sheetName(title?: string): string {
 
 /** A file name from the table's title (or result id), e.g. `orders-by-region.csv`. */
 export function tableFileName(table: Pick<TableBlock, 'title' | 'resultId'>, format: TableFileFormat): string {
-  const base = table.title ? slug(table.title) : (table.resultId ?? '').replace(/[^\w-]+/g, '_');
-  return `${base || 'table'}.${format}`;
+  return `${fileBaseName(table) || 'table'}.${format}`;
+}
+
+/** A file name without extension from a block's title, else its result id; empty when it has neither. */
+export function fileBaseName({ title, resultId }: { title?: string; resultId?: string }): string {
+  return title ? slug(title) : (resultId ?? '').replace(/[^\w-]+/g, '_');
 }
 
 function slug(text: string): string {
   return text
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/\p{M}/gu, '') // combining marks left by NFKD: é → e
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
