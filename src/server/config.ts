@@ -61,6 +61,8 @@ const schema = z
     OLLAMA_BASE_URL: optional,
     SLACK_BOT_TOKEN: optional.refine((v) => !v || v.startsWith('xoxb-'), 'SLACK_BOT_TOKEN must be a bot token (xoxb-…)'),
     SLACK_APP_TOKEN: optional.refine((v) => !v || v.startsWith('xapp-'), 'SLACK_APP_TOKEN must be an app-level token (xapp-…)'),
+    APP_URL: optional.refine((v) => !v || isHttpUrl(v), 'APP_URL must be an http(s) URL, e.g. https://botley.example.com'),
+    AUTH_URL: optional,
   })
   .superRefine((e, ctx) => {
     if (!e.LLM_PROVIDER) return;
@@ -87,6 +89,20 @@ function llmSettings(e: Env): LlmSettings | null {
   return { provider: e.LLM_PROVIDER, model: e.LLM_MODEL, credentials };
 }
 
+function isHttpUrl(text: string): boolean {
+  try {
+    return ['http:', 'https:'].includes(new URL(text).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/** Where people open the web app: APP_URL, else Auth.js's AUTH_URL (when it is a valid URL). */
+function appUrl(e: Env): { appUrl?: string } {
+  const url = e.APP_URL ?? (e.AUTH_URL && isHttpUrl(e.AUTH_URL) ? e.AUTH_URL : undefined);
+  return url ? { appUrl: url.replace(/\/+$/, '') } : {};
+}
+
 export function parseServerConfig(env: Record<string, string | undefined>): ServerConfig {
   const result = schema.safeParse(env);
   if (!result.success) {
@@ -103,6 +119,7 @@ export function parseServerConfig(env: Record<string, string | undefined>): Serv
         .map((id) => id.trim())
         .filter(Boolean),
       encryptionKey: e.ENCRYPTION_KEY,
+      ...appUrl(e),
     },
     llm: llmSettings(e),
     ...(e.SLACK_BOT_TOKEN && { slack: { botToken: e.SLACK_BOT_TOKEN, ...(e.SLACK_APP_TOKEN && { appToken: e.SLACK_APP_TOKEN }) } }),

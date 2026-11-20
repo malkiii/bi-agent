@@ -6,13 +6,14 @@
  *   const pinned = core.pinnedQueries.pin(answer);   // pure; store `pinned` in your own document
  *   const run = await core.pinnedQueries.run(pinned); // fresh rows, same layout
  *
- * Adding a Result Block type (chart, ...) means adding an entry to `pinnableBlocks`; the
+ * Adding a Result Block type means adding an entry to `pinnableBlocks`; the
  * compiler insists, because the table is keyed by every `ResultBlock['type']`.
  */
 import { selectColumns, tableBlock } from '../agent/answer-draft';
 import { createAgentCatalog } from '../agent/catalog';
 import { datasetsReferenced, parseQuery } from '../agent/tools';
-import type { Answer, AnswerSource, ExecutedQuery, ResultBlock, TableBlock, TextBlock } from '../conversations/answer';
+import { chartBlock, checkChartSpec } from '../charts/chart';
+import type { Answer, AnswerSource, ChartBlock, ChartSpec, ExecutedQuery, ResultBlock, TableBlock, TextBlock } from '../conversations/answer';
 import type { DataSources } from '../data-sources/data-sources';
 import type { QueryResult } from '../data-sources/driver';
 import { AppError, ValidationError } from '../errors';
@@ -33,7 +34,8 @@ export interface PinnedQuery {
 /** A Result Block without its data: what it shows and which results it is built from. */
 export type PinnedBlock =
   | { type: 'text'; markdown: string }
-  | { type: 'table'; resultId: string; title?: string; /** Selected column names, in order. */ columns: string[] };
+  | { type: 'table'; resultId: string; title?: string; /** Selected column names, in order. */ columns: string[] }
+  | { type: 'chart'; resultId: string; title?: string; /** The Vega-Lite spec without data. */ spec: ChartSpec };
 
 /** What gets stored: the queries plus the layout. Plain data, safe to keep in Mongo. */
 export interface PinnedAnswer {
@@ -115,7 +117,18 @@ const table: PinnableBlock<TableBlock, Extract<PinnedBlock, { type: 'table' }>> 
   },
 };
 
-const pinnableBlocks: PinnableBlocks = { text, table };
+const chart: PinnableBlock<ChartBlock, Extract<PinnedBlock, { type: 'chart' }>> = {
+  pin: (block) => ({ type: 'chart', resultId: block.resultId, ...(block.title ? { title: block.title } : {}), spec: block.spec }),
+  dependsOn: (pinned) => [pinned.resultId],
+  rebuild(pinned, results) {
+    const result = results[pinned.resultId]!;
+    const check = checkChartSpec(pinned.spec, result.columns);
+    if (!check.ok) throw new PinnedBlockError(`The chart of "${pinned.resultId}" no longer fits its result: ${check.error}`);
+    return chartBlock(result, check, pinned.resultId, pinned.title);
+  },
+};
+
+const pinnableBlocks: PinnableBlocks = { text, table, chart };
 
 /** The entry for a block or pinned block type, loosely typed for generic code. */
 function kindOf(type: string): PinnableBlock<ResultBlock, PinnedBlock> | undefined {

@@ -7,8 +7,11 @@
 import type { Db } from 'mongodb';
 import type { Conversations } from '../conversations/conversations';
 import { AppError } from '../errors';
-import type { Clock, SlackGateway, SlackMessageRef } from '../ports';
+import { renderChartPng } from '../charts/png';
+import { tableFileName, tableToCsv, tableToXlsx } from '../files/table-files';
+import type { Clock, SlackFile, SlackGateway, SlackMessageRef } from '../ports';
 import {
+  type AnswerAttachment,
   PLACEHOLDER_TEXT,
   cleanPromptText,
   renderAnswer,
@@ -48,6 +51,8 @@ interface Deps {
   clock: Clock;
   slack: SlackGateway;
   conversations: Conversations;
+  /** The web app's URL, for the "Open in dashboard" link; no link without it. */
+  appUrl?: string;
   onError?: (error: unknown) => void;
 }
 
@@ -59,7 +64,10 @@ interface SlackEventDoc {
   receivedAt: Date;
 }
 
-export function createSlackBot({ db, clock, slack, conversations, onError }: Deps): SlackBot {
+const UPLOAD_FAILED =
+  ':warning: I could not attach the chart or table files to this thread. Ask an admin to check that the bot has the `files:write` scope.';
+
+export function createSlackBot({ db, clock, slack, conversations, appUrl, onError }: Deps): SlackBot {
   const events = db.collection<SlackEventDoc>('slackEvents');
 
   /** True the first time this message is seen (Socket Mode may redeliver events). */
@@ -71,6 +79,20 @@ export function createSlackBot({ db, clock, slack, conversations, onError }: Dep
       if ((error as { code?: number }).code === 11000) return false;
       throw error;
     }
+  }
+
+  /** Chart PNGs and long-table files, one message per Result Block, after the Answer. Never throws. */
+  async function uploadAttachments(attachments: AnswerAttachment[], channel: string, threadTs: string) {
+    let failed = false;
+    for (const attachment of attachments) {
+      try {
+        await slack.uploadFiles({ channel, threadTs, files: await attachmentFiles(attachment) });
+      } catch (error) {
+        onError?.(error);
+        failed = true;
+      }
+    }
+    if (failed) await slack.postMessage({ channel, threadTs, text: UPLOAD_FAILED }).catch(onError);
   }
 
   return {
@@ -106,7 +128,10 @@ export function createSlackBot({ db, clock, slack, conversations, onError }: Dep
           },
         });
         if (answer.status === 'failed') failure = answer.error;
-        await edit(renderAnswer(answer, { answerId: answerMessageId }));
+        const dashboardUrl = appUrl ? `${appUrl.replace(/\/+$/, '')}/chat/fork/${conversation.id}` : undefined;
+        const { attachments, ...rendered } = renderAnswer(answer, { answerId: answerMessageId, dashboardUrl });
+        await edit(rendered);
+        await uploadAttachments(attachments, prompt.channel, threadTs);
       } catch (error) {
         if (!(error instanceof AppError)) onError?.(error);
         failure = error instanceof AppError ? error.message : UNEXPECTED_ERROR;
@@ -120,6 +145,21 @@ export function createSlackBot({ db, clock, slack, conversations, onError }: Dep
       await slack.openModal(triggerId, renderQueryModal(answer));
     },
   };
+}
+
+async function attachmentFiles(attachment: AnswerAttachment): Promise<SlackFile[]> {
+  if (attachment.kind === 'chart') {
+    const chart = attachment.block;
+    const title = chart.title ?? 'Chart';
+    const filename = tableFileName({ title, resultId: chart.resultId }, 'csv').replace(/\.csv$/, '.png');
+    return [{ filename, title, content: await renderChartPng(chart), altText: `${chart.kind} chart: ${title}` }];
+  }
+  const table = attachment.block;
+  const title = table.title ?? 'Full table';
+  return [
+    { filename: tableFileName(table, 'csv'), title: `${title} (CSV)`, content: new TextEncoder().encode(tableToCsv(table)) },
+    { filename: tableFileName(table, 'xlsx'), title: `${title} (XLSX)`, content: await tableToXlsx(table) },
+  ];
 }
 
 export async function ensureSlackBotIndexes(db: Db) {

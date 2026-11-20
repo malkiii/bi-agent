@@ -3,8 +3,8 @@
  * list of Result Blocks, the Data Sources and Datasets it used, every query it executed
  * (successful or not), token usage and timing. Transports (web, Slack) only render this model.
  *
- * Result Block kinds so far: Text and Table. Chart and File join the `ResultBlock` union
- * when their tickets land; renderers should ignore kinds they don't know.
+ * Result Block kinds: Text, Table and Chart. Files (CSV/XLSX) are generated from Table blocks
+ * when a transport needs them (see `src/core/files`). Renderers should ignore kinds they don't know.
  */
 import type { Dialect, ResultColumn } from '../data-sources/driver';
 
@@ -30,7 +30,25 @@ export interface TableBlock {
   truncated: boolean;
 }
 
-export type ResultBlock = TextBlock | TableBlock;
+/** The six chart kinds, named from the spec's mark (arc = pie/donut, point = scatter, text = big number). */
+export type ChartKind = 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'big-number';
+
+/** A single-view Vega-Lite spec without data, theme or size (see `src/core/charts/chart.ts`). */
+export type ChartSpec = Record<string, unknown>;
+
+export interface ChartBlock {
+  type: 'chart';
+  kind: ChartKind;
+  title?: string;
+  /** The query result the chart draws (`ExecutedQuery.resultId`); lets Pinned Queries rebuild it. */
+  resultId: string;
+  spec: ChartSpec;
+  /** The result's rows as objects keyed by column name. At most `CHART_MAX_ROWS`. */
+  data: Record<string, unknown>[];
+  truncated: boolean;
+}
+
+export type ResultBlock = TextBlock | TableBlock | ChartBlock;
 
 /** Rows kept in a Table block (the Answer is one Mongo document, so it has to stay small). */
 export const TABLE_BLOCK_MAX_ROWS = 1_000;

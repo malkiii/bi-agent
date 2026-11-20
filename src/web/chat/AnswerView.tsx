@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { AnswerSource, ExecutedQuery, ResultBlock, TableBlock } from '@/core';
+import { ChartView } from './ChartView';
 import { Markdown } from './Markdown';
 import styles from './chat.module.css';
 
@@ -13,15 +14,17 @@ export interface AnswerViewProps {
   error?: string;
   /** Latest progress label while the Answer is being made. */
   progress?: string;
+  /** The stored Answer message id, once known; tables then offer CSV/XLSX downloads. */
+  messageId?: string;
 }
 
 /** One Answer: its Result Blocks, the Data Sources used and a "show query" toggle. */
-export function AnswerView({ blocks, sources, queries, status = 'complete', error, progress }: AnswerViewProps) {
+export function AnswerView({ blocks, sources, queries, status = 'complete', error, progress, messageId }: AnswerViewProps) {
   const [showQueries, setShowQueries] = useState(false);
   return (
     <article className={`card ${styles.answer}`} aria-busy={status === 'pending'}>
       {blocks.map((block, i) => (
-        <BlockView key={i} block={block} />
+        <BlockView key={i} block={block} download={messageId ? `/api/answers/${messageId}/blocks/${i}` : undefined} />
       ))}
       {status === 'pending' && <p className={styles.progress}>{progress ?? 'Thinking…'}</p>}
       {status === 'failed' && (
@@ -66,8 +69,11 @@ export function AnswerView({ blocks, sources, queries, status = 'complete', erro
   );
 }
 
-/** One Result Block; unknown block types render nothing. */
-export function BlockView({ block }: { block: ResultBlock }) {
+/**
+ * One Result Block; unknown block types render nothing. `download` is the URL a stored
+ * Table block can be downloaded from (`?format=csv|xlsx`).
+ */
+export function BlockView({ block, download }: { block: ResultBlock; download?: string }) {
   switch (block.type) {
     case 'text':
       return (
@@ -76,7 +82,9 @@ export function BlockView({ block }: { block: ResultBlock }) {
         </div>
       );
     case 'table':
-      return <TableView block={block} />;
+      return <TableView block={block} download={download} />;
+    case 'chart':
+      return <ChartView block={block} />;
     default:
       return null;
   }
@@ -97,7 +105,7 @@ function QueryView({ query }: { query: ExecutedQuery }) {
 
 type Sort = { column: number; direction: 1 | -1 } | null;
 
-function TableView({ block }: { block: TableBlock }) {
+function TableView({ block, download }: { block: TableBlock; download?: string }) {
   const [sort, setSort] = useState<Sort>(null);
   const rows = useMemo(() => {
     if (!sort) return block.rows;
@@ -142,7 +150,22 @@ function TableView({ block }: { block: TableBlock }) {
           </tbody>
         </table>
       </div>
-      {block.truncated && <p className={styles.truncated}>Showing the first {block.rows.length} rows.</p>}
+      {(block.truncated || download) && (
+        <div className={styles.tableFooter}>
+          {block.truncated && <p className={styles.truncated}>Showing the first {block.rows.length} rows.</p>}
+          {download && (
+            <p className={styles.downloads}>
+              <span>Download {block.rows.length.toLocaleString()} rows:</span>
+              <a className="btn btn--ghost" href={`${download}?format=csv`} download>
+                CSV
+              </a>
+              <a className="btn btn--ghost" href={`${download}?format=xlsx`} download>
+                XLSX
+              </a>
+            </p>
+          )}
+        </div>
+      )}
     </figure>
   );
 }

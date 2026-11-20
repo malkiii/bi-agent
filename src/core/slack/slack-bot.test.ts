@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { createTestHarness, type TestHarness } from '@/core/testing';
 import { CONTRACT_FIXTURE_SQL, createPostgresTestDatabase, type PostgresTestDatabase } from '@/drivers/postgres/testing';
-import { SHOW_QUERY_ACTION_ID } from './render';
+import { OPEN_IN_DASHBOARD_ACTION_ID, SHOW_QUERY_ACTION_ID } from './render';
 
 const ADMIN = 'UADMIN';
 const ADA = 'UADA';
@@ -19,7 +19,7 @@ afterAll(() => pgDb.drop());
 let h: TestHarness;
 let warehouseId: string;
 beforeEach(async () => {
-  h = await createTestHarness({ config: { slackTeamId: 'T1', adminSlackUserIds: [ADMIN] } });
+  h = await createTestHarness({ config: { slackTeamId: 'T1', adminSlackUserIds: [ADMIN], appUrl: 'https://botley.example' } });
   await h.core.users.signIn({ slackUserId: ADMIN, slackTeamId: 'T1', name: 'Admin', email: null, image: null });
   const { host, port, database, user, password } = pgDb.connection;
   const ds = await h.core.dataSources.create(ADMIN, {
@@ -171,5 +171,94 @@ describe('"Show query"', () => {
     expect(h.slack.modals).toHaveLength(1);
     expect(h.slack.modals[0]).toMatchObject({ triggerId: 'trig1', view: { type: 'modal' } });
     expect(JSON.stringify(h.slack.modals[0]!.view)).toContain(NORTH_SQL);
+  });
+});
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47];
+const SERIES_SQL = 'SELECT g AS n, g * 2 AS doubled FROM generate_series(1, 40) AS g';
+
+describe('charts and long tables', () => {
+  test('each chart is uploaded to the thread as a PNG after the Answer', async () => {
+    h.llm.script(
+      { toolCalls: [{ toolName: 'runQuery', input: { dataSourceId: warehouseId, query: NORTH_SQL, name: 'north' } }] },
+      {
+        toolCalls: [
+          {
+            toolName: 'emitChart',
+            input: {
+              resultId: 'north',
+              title: 'North sales',
+              spec: { mark: 'bar', encoding: { x: { field: 'region', type: 'nominal' }, y: { field: 'total', type: 'quantitative' } } },
+            },
+          },
+        ],
+      },
+      { text: '' },
+    );
+
+    await h.core.slackBot.handlePrompt({ userId: ADA, channel: CHANNEL, ts: '100.1', text: `<@${BOT}> chart north`, botUserId: BOT });
+
+    expect(h.slack.uploads).toHaveLength(1);
+    const [upload] = h.slack.uploads;
+    expect(upload).toMatchObject({ channel: CHANNEL, threadTs: '100.1', files: [{ filename: 'north-sales.png', title: 'North sales' }] });
+    expect([...upload!.files[0]!.content.subarray(0, 4)]).toEqual(PNG_SIGNATURE);
+    expect(JSON.stringify(h.slack.thread(CHANNEL, '100.1')[0]!.blocks)).toContain('North sales');
+  });
+
+  test('a table over the inline limit shows 10 rows and gets its CSV and XLSX attached', async () => {
+    h.llm.script(
+      { toolCalls: [{ toolName: 'runQuery', input: { dataSourceId: warehouseId, query: SERIES_SQL, name: 'series' } }] },
+      { toolCalls: [{ toolName: 'emitTable', input: { resultId: 'series', title: 'Series' } }] },
+      { text: '' },
+    );
+
+    await h.core.slackBot.handlePrompt({ userId: ADA, channel: CHANNEL, ts: '100.1', text: `<@${BOT}> numbers`, botUserId: BOT });
+
+    const table = (h.slack.thread(CHANNEL, '100.1')[0]!.blocks as Block[]).find((b) => b.type === 'table') as unknown as { rows: unknown[] };
+    expect(table.rows).toHaveLength(11);
+    expect(h.slack.uploads).toHaveLength(1);
+    const files = h.slack.uploads[0]!.files;
+    expect(files.map((f) => f.filename)).toEqual(['series.csv', 'series.xlsx']);
+    const csv = new TextDecoder().decode(files[0]!.content);
+    expect(csv.trim().split('\r\n')).toHaveLength(41);
+    expect([...files[1]!.content.subarray(0, 2)]).toEqual([0x50, 0x4b]); // a zip (XLSX)
+  });
+
+  test('short tables and plain text upload nothing', async () => {
+    scriptNorthAnswer();
+
+    await h.core.slackBot.handlePrompt({ userId: ADA, channel: CHANNEL, ts: '100.1', text: `<@${BOT}> north sales?`, botUserId: BOT });
+
+    expect(h.slack.uploads).toEqual([]);
+  });
+
+  test('a failed upload is reported in the thread but the Answer stays', async () => {
+    h.llm.script(
+      { toolCalls: [{ toolName: 'runQuery', input: { dataSourceId: warehouseId, query: SERIES_SQL, name: 'series' } }] },
+      { toolCalls: [{ toolName: 'emitTable', input: { resultId: 'series' } }] },
+      { text: '' },
+    );
+    h.slack.failUploads = true;
+
+    await h.core.slackBot.handlePrompt({ userId: ADA, channel: CHANNEL, ts: '100.1', text: `<@${BOT}> numbers`, botUserId: BOT });
+
+    const thread = h.slack.thread(CHANNEL, '100.1');
+    expect(thread).toHaveLength(2);
+    expect(thread[1]!.text).toMatch(/could not attach/i);
+    expect(h.slack.reactions.map((r) => r.emoji)).toEqual(['eyes']);
+  });
+});
+
+describe('"Open in dashboard"', () => {
+  test('the Answer links to a Fork of its Conversation in the web app', async () => {
+    scriptNorthAnswer();
+
+    await h.core.slackBot.handlePrompt({ userId: ADA, channel: CHANNEL, ts: '100.1', text: `<@${BOT}> north sales?`, botUserId: BOT });
+
+    const [conversation] = await h.core.conversations.list(ADA);
+    const actions = (h.slack.thread(CHANNEL, '100.1')[0]!.blocks as Block[]).find((b) => b.type === 'actions');
+    expect(actions?.elements).toContainEqual(
+      expect.objectContaining({ action_id: OPEN_IN_DASHBOARD_ACTION_ID, url: `https://botley.example/chat/fork/${conversation!.id}` }),
+    );
   });
 });

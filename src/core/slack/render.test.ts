@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'vitest';
 import type { Answer, ExecutedQuery } from '@/core';
-import { SHOW_QUERY_ACTION_ID, cleanPromptText, renderAnswer, renderQueryModal, toMrkdwn } from './render';
+import type { ChartBlock } from '@/core';
+import {
+  OPEN_IN_DASHBOARD_ACTION_ID,
+  SHOW_QUERY_ACTION_ID,
+  cleanPromptText,
+  renderAnswer,
+  renderQueryModal,
+  toMrkdwn,
+} from './render';
 
 const at = new Date('2026-01-05T09:00:00Z');
 
@@ -84,16 +92,31 @@ describe('renderAnswer', () => {
     ]);
   });
 
-  test('tables longer than 15 rows show the first 15 and say how many there are', () => {
-    const rows = Array.from({ length: 40 }, (_, i) => [i]);
-    const { blocks } = renderAnswer(
+  test('tables of up to 15 rows are shown whole, with nothing attached', () => {
+    const rows = Array.from({ length: 15 }, (_, i) => [i]);
+    const { blocks, attachments } = renderAnswer(
       answer({ blocks: [{ type: 'table', columns: [{ name: 'n', type: 'integer' }], rows, truncated: false }] }),
       { answerId: 'a1' },
     );
 
     const table = blocks.find((b) => (b as { type: string }).type === 'table') as { rows: unknown[][] };
     expect(table.rows).toHaveLength(16);
-    expect(blocks).toContainEqual({ type: 'context', elements: [{ type: 'mrkdwn', text: 'Showing 15 of 40 rows.' }] });
+    expect(blocks.filter((b) => (b as { type: string }).type === 'context')).toEqual([]);
+    expect(attachments).toEqual([]);
+  });
+
+  test('tables longer than 15 rows show a 10-row preview and attach the full table as CSV and XLSX', () => {
+    const rows = Array.from({ length: 40 }, (_, i) => [i]);
+    const block = { type: 'table' as const, title: 'Numbers', columns: [{ name: 'n', type: 'integer' as const }], rows, truncated: false };
+    const { blocks, attachments } = renderAnswer(answer({ blocks: [block] }), { answerId: 'a1' });
+
+    const table = blocks.find((b) => (b as { type: string }).type === 'table') as { rows: unknown[][] };
+    expect(table.rows).toHaveLength(11);
+    expect(blocks).toContainEqual({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: 'Showing 10 of 40 rows. The full table is attached below as CSV and XLSX.' }],
+    });
+    expect(attachments).toEqual([{ kind: 'table', block }]);
   });
 
   test('a truncated query result says there were more rows', () => {
@@ -103,7 +126,28 @@ describe('renderAnswer', () => {
       { answerId: 'a1' },
     );
 
-    expect(blocks).toContainEqual({ type: 'context', elements: [{ type: 'mrkdwn', text: 'Showing 15 of 20+ rows.' }] });
+    expect(blocks).toContainEqual({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: 'Showing 10 of 20+ rows. The full table is attached below as CSV and XLSX.' }],
+    });
+  });
+
+  test('a Chart block is named in the message and attached as an image', () => {
+    const chart: ChartBlock = {
+      type: 'chart',
+      kind: 'bar',
+      title: 'Sales <by> region',
+      resultId: 'r',
+      spec: { mark: 'bar', encoding: {} },
+      data: [],
+      truncated: false,
+    };
+    const { blocks, attachments } = renderAnswer(answer({ blocks: [chart] }), { answerId: 'a1' });
+
+    expect(blocks).toEqual([
+      { type: 'context', elements: [{ type: 'mrkdwn', text: ':bar_chart: *Sales &lt;by&gt; region* (chart attached below)' }] },
+    ]);
+    expect(attachments).toEqual([{ kind: 'chart', block: chart }]);
   });
 
   test('only the first table is a Table block; later ones are monospaced text', () => {
@@ -140,8 +184,27 @@ describe('renderAnswer', () => {
     ]);
   });
 
+  test('an "Open in dashboard" link button when the dashboard URL is known', () => {
+    const { blocks } = renderAnswer(answer({ blocks: [{ type: 'text', markdown: 'Hi' }] }), {
+      answerId: 'a1',
+      dashboardUrl: 'https://botley.example/chat/fork/c1',
+    });
+
+    expect(blocks.at(-1)).toEqual({
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          action_id: OPEN_IN_DASHBOARD_ACTION_ID,
+          text: { type: 'plain_text', text: 'Open in dashboard' },
+          url: 'https://botley.example/chat/fork/c1',
+        },
+      ],
+    });
+  });
+
   test('block kinds it does not know are skipped', () => {
-    const unknown = { type: 'chart', spec: {} } as unknown as Answer['blocks'][number];
+    const unknown = { type: 'hologram', spec: {} } as unknown as Answer['blocks'][number];
     const { blocks } = renderAnswer(answer({ blocks: [unknown, { type: 'text', markdown: 'Hi' }] }), { answerId: 'a1' });
 
     expect(blocks).toEqual([{ type: 'section', text: { type: 'mrkdwn', text: 'Hi' } }]);

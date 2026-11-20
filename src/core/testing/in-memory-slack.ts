@@ -1,4 +1,4 @@
-import type { SlackGateway, SlackMessage, SlackMessageRef } from '../ports';
+import type { SlackFileUpload, SlackGateway, SlackMessage, SlackMessageRef } from '../ports';
 
 export interface RecordedMessage extends SlackMessage {
   ts: string;
@@ -15,6 +15,9 @@ export class InMemorySlackGateway implements SlackGateway {
   readonly messages: RecordedMessage[] = [];
   readonly reactions: RecordedReaction[] = [];
   readonly modals: { triggerId: string; view: unknown }[] = [];
+  readonly uploads: SlackFileUpload[] = [];
+  /** Set to make `uploadFiles` reject, like Slack without the `files:write` scope. */
+  failUploads = false;
   /** Channels the bot is a member of (DM channel IDs starting with "D" always count). */
   readonly botChannels = new Set<string>();
   private seq = 0;
@@ -42,6 +45,11 @@ export class InMemorySlackGateway implements SlackGateway {
 
   async openModal(triggerId: string, view: unknown): Promise<void> {
     this.modals.push({ triggerId, view });
+  }
+
+  async uploadFiles(upload: SlackFileUpload): Promise<void> {
+    if (this.failUploads) throw new Error('missing_scope');
+    this.uploads.push(upload);
   }
 
   /** Messages posted in one thread (or top-level in a channel when threadTs is omitted). */

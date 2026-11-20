@@ -86,6 +86,39 @@ describe('Pinned Queries', () => {
     expect(run.sources).toEqual([{ dataSourceId: warehouseId, name: 'Warehouse', datasets: ['public.orders'] }]);
   });
 
+  test('a chart is pinned with its spec and redrawn from fresh rows', async () => {
+    const spec = { mark: 'bar', encoding: { x: { field: 'region', type: 'nominal' }, y: { field: 'total', type: 'quantitative' } } };
+    h.llm.script(
+      { toolCalls: [{ toolName: 'runQuery', input: { dataSourceId: warehouseId, query: TOTALS_SQL, name: 'totals' } }] },
+      { toolCalls: [{ toolName: 'emitChart', input: { resultId: 'totals', title: 'Totals', spec } }] },
+      { text: '' },
+    );
+    const conversation = await h.core.conversations.startWeb(MEMBER);
+    const pinned = h.core.pinnedQueries.pin(await h.core.conversations.ask(MEMBER, conversation.id, 'Chart sales'));
+    await pgDb.sql("INSERT INTO orders VALUES (4, 'south', 5)");
+
+    const run = await h.core.pinnedQueries.run(pinned);
+
+    expect(pinned.layout).toEqual([{ type: 'chart', resultId: 'totals', title: 'Totals', spec }]);
+    expect(run.blocks).toEqual([
+      {
+        status: 'ok',
+        block: {
+          type: 'chart',
+          kind: 'bar',
+          title: 'Totals',
+          resultId: 'totals',
+          spec,
+          data: [
+            { region: 'north', total: 17.75, orders: 2 },
+            { region: 'south', total: 25, orders: 2 },
+          ],
+          truncated: false,
+        },
+      },
+    ]);
+  });
+
   test('a Pinned Query broken by a schema change fails visibly; blocks it does not feed are still rebuilt', async () => {
     const pinned = h.core.pinnedQueries.pin(await answerTotals());
     await pgDb.sql('ALTER TABLE orders RENAME COLUMN amount TO amount_eur');

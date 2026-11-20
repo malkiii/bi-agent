@@ -14,6 +14,7 @@ export const unconfiguredSlack: SlackGateway = {
   addReaction: async () => notYet('SlackGateway'),
   isBotInChannel: async () => notYet('SlackGateway'),
   openModal: async () => notYet('SlackGateway'),
+  uploadFiles: async () => notYet('SlackGateway'),
 };
 
 export const unconfiguredLlm: LanguageModelProvider = {

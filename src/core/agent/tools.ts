@@ -7,6 +7,7 @@
 import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import { AppError } from '../errors';
+import { chartBlock, checkChartSpec } from '../charts/chart';
 import type { AnswerDraft } from './answer-draft';
 import { selectColumns, tableBlock } from './answer-draft';
 import type { AgentCatalog, AgentDataSource } from './catalog';
@@ -150,7 +151,51 @@ export const emitToolkit: AgentToolkitFactory = ({ answer }) => ({
   },
 });
 
-export const builtInToolkits: readonly AgentToolkitFactory[] = [catalogToolkit, queryToolkit, emitToolkit];
+export const chartToolkit: AgentToolkitFactory = ({ answer }) => ({
+  instructions:
+    'Use emitChart when a chart says it better than a table: trends over time (line or area), comparisons (bar), ' +
+    'parts of a whole with few slices (arc), relationships between two numbers (point), or one headline number ' +
+    '(text with encoding.text as a big-number tile). Write a single-view Vega-Lite spec with "mark", "encoding" and ' +
+    'optionally "transform"; leave out "data", sizes and colours, they are filled in for you.',
+  tools: {
+    emitChart: tool({
+      description:
+        'Add a Chart block drawing a runQuery result. spec is a Vega-Lite spec without data, e.g. ' +
+        '{"mark":"bar","encoding":{"x":{"field":"region","type":"nominal"},"y":{"field":"total","type":"quantitative"}}}. ' +
+        'Marks: bar, line, area, arc, point, text.',
+      inputSchema: z.object({
+        resultId: z.string().describe('The resultId returned by runQuery'),
+        title: z.string().optional(),
+        spec: z.record(z.string(), z.unknown()).describe('Vega-Lite spec without data'),
+      }),
+      execute: async ({ resultId, title, spec }) => {
+        const result = answer.result(resultId);
+        if (!result) return { ok: false, error: `Unknown resultId "${resultId}". Known: ${answer.resultIds().join(', ') || 'none'}.` };
+        const check = checkChartSpec(spec, result.columns);
+        if (!check.ok) return check;
+        const block = chartBlock(result, check, resultId, title);
+        const compiled = await compileError(block.spec, block.data);
+        if (compiled) return { ok: false, error: `The spec is not valid Vega-Lite: ${compiled}` };
+        answer.addBlock(block);
+        return { ok: true };
+      },
+    }),
+  },
+});
+
+/** Vega-Lite's own complaint about a spec, if any. */
+async function compileError(spec: Record<string, unknown>, values: Record<string, unknown>[]): Promise<string | undefined> {
+  const { compile } = await import('vega-lite');
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the spec was checked by checkChartSpec
+    compile({ ...spec, data: { values } } as any);
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+export const builtInToolkits: readonly AgentToolkitFactory[] = [catalogToolkit, queryToolkit, emitToolkit, chartToolkit];
 
 /** Mongo sources take a structured request; everything else takes the text as-is. */
 export function parseQuery(ds: Pick<AgentDataSource, 'dialect'>, query: string) {
