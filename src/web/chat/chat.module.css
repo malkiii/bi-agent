@@ -1,0 +1,237 @@
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.hero h1,
+.conversationHeader h1 {
+  margin: 0;
+}
+
+.conversationHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.prompt {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-cyan);
+  color: var(--color-on-accent);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  white-space: pre-wrap;
+}
+
+.prompt p {
+  margin: 0;
+}
+
+.answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.text > :first-child {
+  margin-top: 0;
+}
+
+.text > :last-child {
+  margin-bottom: 0;
+}
+
+.progress {
+  margin: 0;
+  font-family: var(--font-mono);
+  color: var(--color-muted);
+}
+
+.error {
+  margin: 0;
+  padding: var(--space-3);
+  background: var(--color-danger);
+  color: var(--color-on-accent);
+  border: var(--border);
+  border-radius: var(--radius);
+  font-weight: 700;
+}
+
+.table {
+  margin: 0;
+}
+
+.table figcaption {
+  font-weight: 700;
+  margin-bottom: var(--space-2);
+}
+
+.tableScroll {
+  overflow-x: auto;
+  max-height: 480px;
+  border: var(--border);
+  border-radius: var(--radius);
+}
+
+.table table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.95rem;
+}
+
+.table th,
+.table td {
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 2px solid var(--color-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  background: var(--color-yellow);
+  color: var(--color-on-accent);
+}
+
+.table th button {
+  all: unset;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.table th button:focus-visible {
+  outline: 2px solid var(--color-on-accent);
+}
+
+.table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.truncated,
+.muted {
+  color: var(--color-muted);
+}
+
+.truncated {
+  margin: var(--space-2) 0 0;
+  font-size: 0.9rem;
+}
+
+.answerFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 2px dashed var(--color-border);
+}
+
+.sources {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
+}
+
+.queries {
+  flex-basis: 100%;
+  margin: 0;
+  padding-left: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.queryMeta {
+  margin: 0 0 var(--space-1);
+  font-size: 0.9rem;
+}
+
+.queryText {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  background: var(--color-bg);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.queryError {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.promptBox {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-end;
+}
+
+.promptBox textarea {
+  flex: 1;
+  resize: vertical;
+  padding: var(--space-3);
+  font: 1rem var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-surface);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.promptBoxBig textarea {
+  font-size: 1.2rem;
+  box-shadow: var(--shadow);
+}
+
+.recent ul {
+  padding-left: var(--space-6);
+}
+
+.recent li {
+  margin-bottom: var(--space-2);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

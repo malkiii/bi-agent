@@ -9,6 +9,7 @@ import type { Clock, LanguageModelProvider, SlackGateway } from './ports';
 import { createPreferences, ensurePreferenceIndexes, type Preferences } from './preferences/preferences';
 import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
+import { createConversations, ensureConversationIndexes, type Conversations } from './conversations/conversations';
 
 export * from './errors';
 export type * from './ports';
@@ -21,6 +22,15 @@ export type {
   DataSourceView,
 } from './data-sources/data-sources';
 export * from './data-sources/driver';
+export * from './conversations/answer';
+export type {
+  AskOptions,
+  Conversation,
+  ConversationMessage,
+  ConversationSource,
+  ConversationWithMessages,
+} from './conversations/conversations';
+export type { AgentToolContext, AgentToolkit, AgentToolkitFactory } from './agent/tools';
 
 export interface AppCoreConfig {
   /** Only this Slack workspace may sign in. */
@@ -39,25 +49,36 @@ export interface AppCoreDeps {
   /** The Data Source kinds; production passes `builtInDrivers` from `@/drivers`. */
   drivers: DriverRegistry;
   config: AppCoreConfig;
+  /** Called with the underlying error when an Answer fails (model or tool crash), for logging. */
+  onAgentError?: (error: unknown) => void;
 }
 
 export interface AppCore {
   users: Users;
   preferences: Preferences;
   dataSources: DataSources;
+  conversations: Conversations;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
   const users = createUsers(deps);
+  const dataSources = createDataSources({
+    db: deps.db,
+    clock: deps.clock,
+    users,
+    drivers: deps.drivers,
+    secretBox: createSecretBox(deps.config.encryptionKey),
+  });
   return {
     users,
     preferences: createPreferences(deps),
-    dataSources: createDataSources({
+    dataSources,
+    conversations: createConversations({
       db: deps.db,
       clock: deps.clock,
-      users,
-      drivers: deps.drivers,
-      secretBox: createSecretBox(deps.config.encryptionKey),
+      llm: deps.llm,
+      dataSources,
+      onAgentError: deps.onAgentError,
     }),
   };
 }
@@ -67,4 +88,5 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensureUserIndexes(db);
   await ensurePreferenceIndexes(db);
   await ensureDataSourceIndexes(db);
+  await ensureConversationIndexes(db);
 }
