@@ -98,6 +98,38 @@ export async function saveExposedDatasets(formData: FormData) {
   await runAndReturn(id, 'exposed', () => core.dataSources.setExposedDatasets(user.slackUserId, id, datasetIds));
 }
 
+const splitSynonyms = (value: FormDataEntryValue | null) => String(value ?? '').split(',');
+
+/** Descriptions and Synonyms of one Dataset and its columns (fields `column.<name>.description|synonyms`). */
+export async function saveDatasetDetails(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get('id'));
+  const datasetId = String(formData.get('datasetId'));
+  const columns: Record<string, { description: string; synonyms: string[] }> = {};
+  for (const [key, value] of formData.entries()) {
+    const match = /^column\.(.+)\.(description|synonyms)$/.exec(key);
+    if (!match) continue;
+    const column = (columns[match[1]!] ??= { description: '', synonyms: [] });
+    if (match[2] === 'description') column.description = String(value);
+    else column.synonyms = splitSynonyms(value);
+  }
+  const back = `${BASE}/${id}/dataset?d=${encodeURIComponent(datasetId)}`;
+  let query = 'notice=saved';
+  try {
+    await (await getCore()).dataSources.updateDatasetDetails(user.slackUserId, id, datasetId, {
+      description: String(formData.get('description') ?? ''),
+      synonyms: splitSynonyms(formData.get('synonyms')),
+      columns,
+    });
+  } catch (error) {
+    if (!(error instanceof AppError)) throw error;
+    query = `error=${encodeURIComponent(error.message)}`;
+  }
+  revalidatePath(BASE);
+  revalidatePath('/catalog');
+  redirect(`${back}&${query}`);
+}
+
 export async function deleteDataSource(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get('id'));

@@ -20,6 +20,7 @@ FROM node:24-slim AS base
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 # Shared volume for uploaded Datasets (ADR 0003).
+ENV UPLOADS_DIR=/data/uploads
 RUN mkdir -p /data/uploads && chown node:node /data/uploads
 
 FROM base AS web

@@ -23,6 +23,7 @@
     "@ai-sdk/google": "^4.0.122",
     "@ai-sdk/groq": "^4.0.85",
     "@ai-sdk/openai": "^4.0.121",
+    "@duckdb/node-api": "1.5.6-r.2",
     "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@openrouter/ai-sdk-provider": "^3.1.0",
     "@resvg/resvg-js": "^2.6.2",

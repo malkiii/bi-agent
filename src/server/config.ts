@@ -19,6 +19,8 @@ const isEncryptionKey = (text: string) => {
 export interface ServerConfig {
   mongoUrl: string;
   mongoDb: string;
+  /** Shared volume for uploaded Datasets (ADR 0003); `web` and `worker` must see the same directory. */
+  uploadsDir: string;
   core: AppCoreConfig;
   /** The default LLM provider and model; null when LLM_PROVIDER is unset (Answers then fail with a friendly error). */
   llm: LlmSettings | null;
@@ -46,6 +48,7 @@ const schema = z
   .object({
     MONGO_URL: required('MONGO_URL'),
     MONGO_DB: z.string().trim().min(1).default('botley'),
+    UPLOADS_DIR: z.string().trim().min(1).default('data/uploads'),
     SLACK_TEAM_ID: required('SLACK_TEAM_ID'),
     ADMIN_SLACK_USER_IDS: z.string().default(''),
     ENCRYPTION_KEY: required('ENCRYPTION_KEY').refine(isEncryptionKey, 'ENCRYPTION_KEY must be 32 bytes, base64- or hex-encoded (openssl rand -base64 32)'),
@@ -113,6 +116,7 @@ export function parseServerConfig(env: Record<string, string | undefined>): Serv
   return {
     mongoUrl: e.MONGO_URL,
     mongoDb: e.MONGO_DB,
+    uploadsDir: e.UPLOADS_DIR,
     core: {
       slackTeamId: e.SLACK_TEAM_ID,
       adminSlackUserIds: e.ADMIN_SLACK_USER_IDS.split(',')

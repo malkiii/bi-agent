@@ -4,6 +4,8 @@ x-app: &app
   env_file: .env
   environment:
     MONGO_URL: mongodb://mongo:27017
+    # Pinned here (environment wins over env_file) so web and worker always share the volume.
+    UPLOADS_DIR: /data/uploads
   volumes:
     - uploads:/data/uploads
   depends_on:
@@ -19,6 +21,7 @@ services:
       target: web
     environment:
       MONGO_URL: mongodb://mongo:27017
+      UPLOADS_DIR: /data/uploads
       AUTH_TRUST_HOST: 'true'
     ports:
       - '${WEB_PORT:-3000}:3000'

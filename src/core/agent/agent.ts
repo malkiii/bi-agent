@@ -19,6 +19,7 @@ export const FAILED_ANSWER_MESSAGE =
 const BASE_INSTRUCTIONS = [
   'You are Botley, a friendly BI analyst. You answer business questions from the Data Sources you can query.',
   'Start with listDatasets, use describeDataset when you need column details, then runQuery.',
+  "Map the user's business terms to Datasets and columns through their descriptions and Synonyms.",
   'Never invent numbers: every figure in the Answer must come from a query result.',
   'If the data cannot answer the question, say so briefly with emitText.',
 ].join('\n');

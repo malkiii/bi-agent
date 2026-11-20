@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { NotFoundError, type DataSourceView } from '@/core';
+import { NotFoundError, UPLOADS_KIND, type DataSourceView } from '@/core';
 import { builtInDrivers } from '@/drivers';
 import { DataSourceForm } from '@/web/components/DataSourceForm';
 import { getCore } from '@/web/server-runtime';
@@ -43,6 +43,7 @@ export default async function DataSourcePage({
   const [{ id }, { notice, error }] = await Promise.all([params, searchParams]);
   const ds = await load(id);
   const kind = builtInDrivers[ds.kind];
+  const isUploads = ds.kind === UPLOADS_KIND;
 
   return (
     <div className={styles.stack}>
@@ -52,7 +53,12 @@ export default async function DataSourcePage({
 
       <section className="card">
         <h1>{ds.name}</h1>
-        {kind ? (
+        {isUploads ? (
+          <p className={styles.muted}>
+            Botley maintains this Data Source: members add Datasets on the <Link href="/uploads">Uploads</Link> page.
+            Admins can hide Datasets below or delete them there.
+          </p>
+        ) : kind ? (
           <DataSourceForm
             kind={{ kind: kind.kind, label: kind.label, fields: kind.fields }}
             existing={{ id: ds.id, name: ds.name, config: ds.config, secrets: ds.secrets }}
@@ -106,7 +112,10 @@ export default async function DataSourcePage({
                 <label key={d.id} className={styles.dataset}>
                   <input type="checkbox" name="dataset" value={d.id} defaultChecked={d.exposed} />
                   <span>
-                    <strong>{d.id}</strong> <span className="tag">{d.kind}</span>
+                    <strong>{d.id}</strong> <span className="tag">{d.kind}</span>{' '}
+                    <Link href={`/admin/data-sources/${ds.id}/dataset?d=${encodeURIComponent(d.id)}`}>
+                      Descriptions &amp; Synonyms
+                    </Link>
                   </span>
                   <span className={styles.columns}>
                     {d.columns.map((c) => `${c.name} ${c.nativeType}`).join(', ')}
@@ -123,16 +132,18 @@ export default async function DataSourcePage({
         )}
       </section>
 
-      <section className="card">
-        <h2>Delete</h2>
-        <p className={styles.muted}>Botley will stop using this Data Source. This cannot be undone.</p>
-        <form action={deleteDataSource}>
-          <input type="hidden" name="id" value={ds.id} />
-          <button type="submit" className={`btn ${styles.danger}`}>
-            Delete {ds.name}
-          </button>
-        </form>
-      </section>
+      {!isUploads && (
+        <section className="card">
+          <h2>Delete</h2>
+          <p className={styles.muted}>Botley will stop using this Data Source. This cannot be undone.</p>
+          <form action={deleteDataSource}>
+            <input type="hidden" name="id" value={ds.id} />
+            <button type="submit" className={`btn ${styles.danger}`}>
+              Delete {ds.name}
+            </button>
+          </form>
+        </section>
+      )}
     </div>
   );
 }

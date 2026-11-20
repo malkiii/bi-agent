@@ -11,6 +11,7 @@ import { chartBlock, checkChartSpec } from '../charts/chart';
 import type { AnswerDraft } from './answer-draft';
 import { selectColumns, tableBlock } from './answer-draft';
 import type { AgentCatalog, AgentDataSource } from './catalog';
+import type { CatalogDetails } from '../data-sources/data-sources';
 
 export interface AgentToolContext {
   catalog: AgentCatalog;
@@ -34,7 +35,8 @@ export const catalogToolkit: AgentToolkitFactory = ({ catalog, answer }) => ({
   tools: {
     listDatasets: tool({
       description:
-        'List the Data Sources you can query, each with its query dialect and its Datasets (tables, collections, objects, sheets).',
+        'List the Data Sources you can query, each with its query dialect and its Datasets (tables, collections, objects, sheets), ' +
+        'with their descriptions and Synonyms: business terms that mean a Dataset (synonyms) or a column (columnSynonyms).',
       inputSchema: z.object({}),
       execute: async () => {
         answer.progress('Looking at the available Datasets…');
@@ -43,12 +45,24 @@ export const catalogToolkit: AgentToolkitFactory = ({ catalog, answer }) => ({
           dataSourceId: ds.dataSourceId,
           name: ds.name,
           dialect: ds.dialect,
-          datasets: ds.datasets.map((d) => ({ id: d.id, kind: d.kind, columns: d.columns.map((c) => c.name) })),
+          datasets: ds.datasets.map((d) => {
+            const columnSynonyms = Object.fromEntries(
+              d.columns.flatMap((c) => (c.synonyms?.length ? [[c.name, c.synonyms]] : [])),
+            );
+            return {
+              id: d.id,
+              kind: d.kind,
+              ...details(d),
+              columns: d.columns.map((c) => c.name),
+              ...(Object.keys(columnSynonyms).length > 0 && { columnSynonyms }),
+            };
+          }),
         }));
       },
     }),
     describeDataset: tool({
-      description: 'Get the detailed schema of one Dataset: every column with its type.',
+      description:
+        'Get the detailed schema of one Dataset: every column with its type, description and Synonyms.',
       inputSchema: z.object({
         dataSourceId: z.string(),
         datasetId: z.string().describe('The Dataset id from listDatasets, e.g. public.orders'),
@@ -62,12 +76,24 @@ export const catalogToolkit: AgentToolkitFactory = ({ catalog, answer }) => ({
           dataSourceId,
           id: dataset.id,
           kind: dataset.kind,
-          columns: dataset.columns.map((c) => ({ name: c.name, type: c.type, nativeType: c.nativeType, nullable: c.nullable })),
+          ...details(dataset),
+          columns: dataset.columns.map((c) => ({
+            name: c.name,
+            type: c.type,
+            nativeType: c.nativeType,
+            nullable: c.nullable,
+            ...details(c),
+          })),
         };
       },
     }),
   },
 });
+
+/** Description and Synonyms, only when set (keeps tool output compact). */
+function details({ description, synonyms }: CatalogDetails) {
+  return { ...(description && { description }), ...(synonyms?.length && { synonyms }) };
+}
 
 export const queryToolkit: AgentToolkitFactory = ({ catalog, answer }) => ({
   instructions:

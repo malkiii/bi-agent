@@ -3,9 +3,15 @@
  * Construct it with `createAppCore(deps)`; tests construct it via `createTestHarness()`.
  */
 import type { Db } from 'mongodb';
-import { createDataSources, ensureDataSourceIndexes, type DataSources } from './data-sources/data-sources';
+import {
+  createDataSources,
+  createManagedDataSources,
+  ensureDataSourceIndexes,
+  type DataSources,
+} from './data-sources/data-sources';
 import type { DriverRegistry } from './data-sources/driver';
-import type { Clock, LanguageModelProvider, SlackGateway } from './ports';
+import type { Clock, LanguageModelProvider, SlackGateway, UploadStorage } from './ports';
+import { createUploads, ensureUploadIndexes, type Uploads } from './uploads/uploads';
 import { createPreferences, ensurePreferenceIndexes, type Preferences } from './preferences/preferences';
 import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
@@ -19,8 +25,11 @@ export type * from './ports';
 export type { Role, SlackIdentity, User } from './users/users';
 export type { ThemePreference } from './preferences/preferences';
 export type {
+  CatalogColumn,
   CatalogDataset,
+  CatalogDetails,
   ConnectionTestInput,
+  DatasetDetailsInput,
   DataSourceInput,
   DataSourceView,
 } from './data-sources/data-sources';
@@ -49,6 +58,21 @@ export type {
   PinnedRun,
   PinnedRunBlock,
 } from './pinned-queries/pinned-queries';
+export {
+  MAX_UPLOAD_BYTES,
+  UPLOADS_KIND,
+  UploadsUnavailableError,
+  type ConfirmSheet,
+  type ConfirmUploadInput,
+  type SheetPreview,
+  type UploadColumnPreview,
+  type UploadedDataset,
+  type UploadFile,
+  type UploadMode,
+  type UploadPreview,
+  type Uploads,
+} from './uploads/uploads';
+export { UPLOAD_COLUMN_TYPES, type UploadColumnType } from './uploads/column-types';
 export type {
   SaveQuestionInput,
   SavedQuestion,
@@ -75,6 +99,8 @@ export interface AppCoreDeps {
   /** The Data Source kinds; production passes `builtInDrivers` from `@/drivers`. */
   drivers: DriverRegistry;
   config: AppCoreConfig;
+  /** Where uploaded files and Datasets are stored; uploads are off without it. */
+  uploadStorage?: UploadStorage;
   /** Called with the underlying error when an Answer fails (model or tool crash), for logging. */
   onAgentError?: (error: unknown) => void;
 }
@@ -87,17 +113,13 @@ export interface AppCore {
   slackBot: SlackBot;
   pinnedQueries: PinnedQueries;
   savedQuestions: SavedQuestions;
+  uploads: Uploads;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
   const users = createUsers(deps);
-  const dataSources = createDataSources({
-    db: deps.db,
-    clock: deps.clock,
-    users,
-    drivers: deps.drivers,
-    secretBox: createSecretBox(deps.config.encryptionKey),
-  });
+  const secretBox = createSecretBox(deps.config.encryptionKey);
+  const dataSources = createDataSources({ db: deps.db, clock: deps.clock, users, drivers: deps.drivers, secretBox });
   const conversations = createConversations({
     db: deps.db,
     clock: deps.clock,
@@ -121,6 +143,14 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     }),
     pinnedQueries,
     savedQuestions: createSavedQuestions({ db: deps.db, clock: deps.clock, users, conversations, pinnedQueries }),
+    uploads: createUploads({
+      db: deps.db,
+      clock: deps.clock,
+      users,
+      managed: createManagedDataSources({ db: deps.db, clock: deps.clock, secretBox }),
+      drivers: deps.drivers,
+      storage: deps.uploadStorage,
+    }),
   };
 }
 
@@ -132,4 +162,5 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensureConversationIndexes(db);
   await ensureSlackBotIndexes(db);
   await ensureSavedQuestionIndexes(db);
+  await ensureUploadIndexes(db);
 }

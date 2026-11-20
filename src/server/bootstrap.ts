@@ -2,6 +2,7 @@ import { MongoClient, type Db } from 'mongodb';
 import { createAppCore, prepareDatabase, type AppCore } from '@/core';
 import { systemClock } from '@/adapters/system-clock';
 import { builtInDrivers } from '@/drivers';
+import { createUploadsBackend } from '@/drivers/uploads';
 import { unconfiguredLlm, unconfiguredSlack } from '@/adapters/unconfigured';
 import { createLanguageModelProvider } from '@/adapters/llm';
 import { createSlackWebGateway } from '@/adapters/slack-web-gateway';
@@ -26,12 +27,14 @@ export async function bootstrap(config: ServerConfig): Promise<ServerRuntime> {
   const db = client.db(config.mongoDb);
   await db.command({ ping: 1 });
   await prepareDatabase(db);
+  const uploads = createUploadsBackend(config.uploadsDir);
   const core = createAppCore({
     db,
     clock: systemClock,
     slack: config.slack ? createSlackWebGateway(new WebClient(config.slack.botToken)) : unconfiguredSlack,
     llm: config.llm ? createLanguageModelProvider(config.llm) : unconfiguredLlm,
-    drivers: builtInDrivers,
+    drivers: { ...builtInDrivers, [uploads.kind.kind]: uploads.kind },
+    uploadStorage: uploads.storage,
     config: config.core,
     onAgentError: (error) => console.error('Answer failed:', error),
   });

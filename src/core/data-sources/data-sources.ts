@@ -13,6 +13,7 @@ import type { Users } from '../users/users';
 import {
   OAuthError,
   type AnyDriverKind,
+  type Column,
   type ConnectionTestResult,
   type DataSourceDriver,
   type DriverContext,
@@ -20,9 +21,27 @@ import {
   type IntrospectedDataset,
 } from './driver';
 
-export interface CatalogDataset extends IntrospectedDataset {
+/** What an admin wrote about a Dataset or column. Both are left out when empty. */
+export interface CatalogDetails {
+  description?: string;
+  /** Business terms that mean this Dataset or column, e.g. "revenue" for `orders.total_amount`. */
+  synonyms?: string[];
+}
+
+export interface CatalogColumn extends Column, CatalogDetails {}
+
+export interface CatalogDataset extends Omit<IntrospectedDataset, 'columns'>, CatalogDetails {
+  columns: CatalogColumn[];
   /** Only Exposed Datasets are visible to the agent. */
   exposed: boolean;
+}
+
+/** Everything an admin writes about one Dataset; replaces what was there (left out = cleared). */
+export interface DatasetDetailsInput {
+  description?: string;
+  synonyms?: readonly string[];
+  /** By column name. */
+  columns?: Readonly<Record<string, { description?: string; synonyms?: readonly string[] }>>;
 }
 
 /** A Data Source as clients see it: secrets are reduced to "set" indicators. */
@@ -61,8 +80,18 @@ export interface DataSources {
   update(actorSlackUserId: string, id: string, input: DataSourceInput): Promise<DataSourceView>;
   delete(actorSlackUserId: string, id: string): Promise<void>;
   testConnection(actorSlackUserId: string, input: ConnectionTestInput): Promise<ConnectionTestResult>;
-  /** Introspects and stores the Datasets, keeping existing exposure choices. */
+  /**
+   * Introspects and stores the Datasets, keeping existing exposure choices, Dataset
+   * descriptions and Synonyms, and those of columns whose name and type are unchanged.
+   */
   refreshSchema(actorSlackUserId: string, id: string): Promise<DataSourceView>;
+  /** Admin only: sets the descriptions and Synonyms of a Dataset and its columns. */
+  updateDatasetDetails(
+    actorSlackUserId: string,
+    id: string,
+    datasetId: string,
+    details: DatasetDetailsInput,
+  ): Promise<DataSourceView>;
   /** Exactly these Dataset ids become exposed; the rest are hidden. */
   setExposedDatasets(actorSlackUserId: string, id: string, datasetIds: readonly string[]): Promise<DataSourceView>;
   /** Opens the Data Source's driver with decrypted credentials, runs `work`, then closes it. */
@@ -227,6 +256,7 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
     async create(actor, input) {
       await users.requireAdmin(actor);
       const { name, kind, config, secrets } = validate(input);
+      if (kind.managed) throw managedError(kind.label, { kind: 'Managed by Botley' });
       const now = clock.now();
       const doc: DataSourceDoc = {
         _id: randomUUID(),
@@ -256,6 +286,7 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
         throw new ValidationError('The kind of a Data Source cannot change.', { kind: 'Cannot change' });
       }
       const kind = kindOf(existing.kind);
+      if (kind.managed || existing.createdBy === MANAGED_BY) throw managedError(kind.label);
       let stored = openSecrets(existing);
       // OAuth tokens belong to the org and app in the config: changing it needs a reconnect.
       if (kind.oauth && JSON.stringify(validate(input, stored).config) !== JSON.stringify(existing.config)) {
@@ -273,6 +304,9 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
 
     async delete(actor, id) {
       await users.requireAdmin(actor);
+      const existing = await load(id);
+      // Checked on the document too, so it holds even when the kind is not registered.
+      if (existing.createdBy === MANAGED_BY || drivers[existing.kind]?.managed) throw managedError(existing.name);
       const { deletedCount } = await collection.deleteOne({ _id: id });
       if (deletedCount === 0) throw new NotFoundError('Data Source not found.');
     },
@@ -294,10 +328,27 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
         (driver) => driver.introspect(),
         doc._id,
       );
-      const wasExposed = new Set(doc.datasets.filter((d) => d.exposed).map((d) => d.id));
-      const datasets = introspected.map((d) => ({ ...d, exposed: wasExposed.has(d.id) }));
+      const previous = new Map(doc.datasets.map((d) => [d.id, d]));
+      const datasets = introspected.map((d) => mergeCatalogDataset(previous.get(d.id), d));
       const now = clock.now();
       return save(id, { datasets, schemaRefreshedAt: now, updatedAt: now, updatedBy: actor });
+    },
+
+    async updateDatasetDetails(actor, id, datasetId, details) {
+      await users.requireAdmin(actor);
+      const doc = await load(id);
+      const dataset = doc.datasets.find((d) => d.id === datasetId);
+      if (!dataset) throw new ValidationError(`Unknown Dataset "${datasetId}". Refresh the schema first.`);
+      const columnDetails = details.columns ?? {};
+      const unknown = Object.keys(columnDetails).filter((name) => !dataset.columns.some((c) => c.name === name));
+      if (unknown.length > 0) throw new ValidationError(`${datasetId} has no columns named ${unknown.join(', ')}.`);
+
+      const updated: CatalogDataset = {
+        ...withDetails(dataset, details),
+        columns: dataset.columns.map((c) => withDetails(c, columnDetails[c.name] ?? {})),
+      };
+      const datasets = doc.datasets.map((d) => (d.id === datasetId ? updated : d));
+      return save(id, { datasets, updatedAt: clock.now(), updatedBy: actor });
     },
 
     async setExposedDatasets(actor, id, datasetIds) {
@@ -369,6 +420,148 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
         updatedAt: clock.now(),
         updatedBy: actor,
       });
+    },
+  };
+}
+
+/** Trimmed, without blanks or case-insensitive repeats (the first spelling wins). */
+function cleanSynonyms(synonyms: readonly string[] = []): string[] {
+  const seen = new Set<string>();
+  return synonyms.flatMap((s) => {
+    const term = typeof s === 'string' ? s.trim().replace(/\s+/g, ' ') : '';
+    if (!term || seen.has(term.toLowerCase())) return [];
+    seen.add(term.toLowerCase());
+    return [term];
+  });
+}
+
+/** `target` with its description and Synonyms replaced by `details`; empty ones are left out. */
+function withDetails<T extends object>(target: T, details: CatalogDetails | DatasetDetailsInput): T & CatalogDetails {
+  const rest: Record<string, unknown> = { ...(target as Record<string, unknown>) };
+  delete rest.description;
+  delete rest.synonyms;
+  const description = typeof details.description === 'string' ? details.description.trim() : '';
+  const synonyms = cleanSynonyms(details.synonyms);
+  return {
+    ...rest,
+    ...(description && { description }),
+    ...(synonyms.length > 0 && { synonyms }),
+  } as T & CatalogDetails;
+}
+
+/**
+ * A freshly introspected (or re-uploaded) Dataset, keeping what the catalog knew about it:
+ * exposure, the Dataset's description and Synonyms, and those of columns with the same name and type.
+ */
+export function mergeCatalogDataset(
+  previous: CatalogDataset | undefined,
+  next: Omit<IntrospectedDataset, 'columns'> & { columns: Column[] },
+  options: { exposedByDefault?: boolean } = {},
+): CatalogDataset {
+  const columns = next.columns.map((column) => {
+    const before = previous?.columns.find((c) => c.name === column.name && c.type === column.type);
+    return before ? withDetails(column, before) : column;
+  });
+  return {
+    ...withDetails(next, previous ?? {}),
+    columns,
+    exposed: previous?.exposed ?? options.exposedByDefault ?? false,
+  };
+}
+
+/** The actor recorded on Data Sources the App Core maintains itself. */
+const MANAGED_BY = 'botley';
+
+function managedError(label: string, fieldErrors?: Record<string, string>) {
+  return new ValidationError(
+    `The ${label} Data Source is maintained by Botley and cannot be added, edited or deleted here.`,
+    fieldErrors,
+  );
+}
+
+/**
+ * For App Core modules that maintain a managed Data Source (Uploads): find or create it and
+ * keep its Datasets. No actor checks; the calling module decides who may do what.
+ */
+export interface ManagedDataSources {
+  /** The one Data Source of `kind`, created (named `name`) on first use. */
+  ensure(kind: string, name: string): Promise<DataSourceView>;
+  /** The Data Source of `kind`, or null before its first use. */
+  find(kind: string): Promise<DataSourceView | null>;
+  /** Adds the Dataset, or replaces the one with the same id. */
+  putDataset(dataSourceId: string, dataset: CatalogDataset): Promise<void>;
+  removeDataset(dataSourceId: string, datasetId: string): Promise<void>;
+}
+
+export function createManagedDataSources({ db, clock, secretBox }: Pick<Deps, 'db' | 'clock' | 'secretBox'>): ManagedDataSources {
+  const collection = db.collection<DataSourceDoc>('dataSources');
+
+  const view = (doc: DataSourceDoc): DataSourceView => ({
+    id: doc._id,
+    name: doc.name,
+    kind: doc.kind,
+    config: doc.config,
+    secrets: {},
+    datasets: doc.datasets,
+    schemaRefreshedAt: doc.schemaRefreshedAt,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  });
+
+  const touched = () => ({ updatedAt: clock.now(), updatedBy: MANAGED_BY, schemaRefreshedAt: clock.now() });
+
+  return {
+    async ensure(kind, name) {
+      const existing = await collection.findOne({ kind });
+      if (existing) return view(existing);
+      const now = clock.now();
+      const doc: DataSourceDoc = {
+        _id: randomUUID(),
+        name,
+        kind,
+        config: {},
+        sealedSecrets: secretBox.seal('{}'),
+        datasets: [],
+        schemaRefreshedAt: now,
+        createdAt: now,
+        createdBy: MANAGED_BY,
+        updatedAt: now,
+        updatedBy: MANAGED_BY,
+      };
+      try {
+        await collection.insertOne(doc);
+        return view(doc);
+      } catch (error) {
+        // Created concurrently: use that one.
+        const raced = await collection.findOne({ kind });
+        if (raced) return view(raced);
+        if (error instanceof MongoServerError && error.code === 11000) {
+          throw new ValidationError(`Rename the Data Source "${name}": Botley needs that name for its ${kind} Data Source.`);
+        }
+        throw error;
+      }
+    },
+
+    async find(kind) {
+      const doc = await collection.findOne({ kind });
+      return doc ? view(doc) : null;
+    },
+
+    async putDataset(dataSourceId, dataset) {
+      const replaced = await collection.updateOne(
+        { _id: dataSourceId, 'datasets.id': dataset.id },
+        { $set: { 'datasets.$': dataset, ...touched() } },
+      );
+      if (replaced.matchedCount > 0) return;
+      const added = await collection.updateOne(
+        { _id: dataSourceId, 'datasets.id': { $ne: dataset.id } },
+        { $push: { datasets: dataset }, $set: touched() },
+      );
+      if (added.matchedCount === 0) throw new NotFoundError('Data Source not found.');
+    },
+
+    async removeDataset(dataSourceId, datasetId) {
+      await collection.updateOne({ _id: dataSourceId }, { $pull: { datasets: { id: datasetId } }, $set: touched() });
     },
   };
 }

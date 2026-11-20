@@ -110,6 +110,11 @@ export interface DriverKind<TConfig = Record<string, unknown>, TSecrets = Record
   create(config: TConfig, secrets: TSecrets, context?: DriverContext<TSecrets>): DataSourceDriver;
   /** Present for kinds connected through an OAuth consent screen (Salesforce) rather than typed credentials. */
   oauth?: DriverOAuth<TConfig, TSecrets>;
+  /**
+   * The App Core creates and maintains the one Data Source of this kind itself (Uploads);
+   * admins cannot add, edit or delete it on the Data Source form.
+   */
+  managed?: boolean;
 }
 
 /** What the App Core offers a driver it creates for a saved Data Source. */

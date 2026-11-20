@@ -9,6 +9,7 @@ describe('server config from environment', () => {
     expect(parseServerConfig(minimal)).toEqual({
       mongoUrl: 'mongodb://mongo:27017',
       mongoDb: 'botley',
+      uploadsDir: 'data/uploads',
       core: { slackTeamId: 'T0TEAM', adminSlackUserIds: [], encryptionKey: KEY },
       llm: null,
     });
