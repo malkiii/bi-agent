@@ -135,6 +135,6 @@ setBotleyState('error');                  // e.g. a failed tool call or request 
 - A form whose submit is slow can use `<PendingButton>` (`src/web/components/PendingButton.tsx`). It shows `thinking` while the form's server action runs. Sign-in and sign-out use it.
 - Empty lists (no Conversations, no Data Sources yet) render `<Botley rest="empty" />` next to the empty-state text.
 
-Events wired so far: idle by default, `thinking` while sign-in or sign-out is pending, `success` right after sign-in, `error` on the sign-in error, the forbidden page and the `error.tsx` boundaries, and `empty` on the admin placeholder and the 404 page. Chat (thinking/answering), Data Source tests and Reports should hook in as described above when they are built.
+Events wired so far: idle by default, `thinking` while sign-in or sign-out is pending, `success` right after sign-in, `error` on the sign-in error, the forbidden page and the `error.tsx` boundaries, and `empty` on the 404 page. Chat (thinking/answering), Data Source tests and Reports should hook in as described above when they are built.
 
 The Slack avatar `public/botley-avatar.png` (1024 px) is rendered from `public/botley.svg`. After changing the SVG, re-render it with any SVG rasteriser, e.g. `@resvg/resvg-js`: `new Resvg(svg, { fitTo: { mode: 'width', value: 1024 } }).render().asPng()`.
