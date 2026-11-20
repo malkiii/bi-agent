@@ -6,10 +6,11 @@ import styles from './data-sources.module.css';
 
 export const dynamic = 'force-dynamic';
 
-export default async function DataSourcesPage() {
-  const dataSources = await (await getCore()).dataSources.list();
+export default async function DataSourcesPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const [dataSources, { error }] = await Promise.all([(await getCore()).dataSources.list(), searchParams]);
   return (
     <section className={`card ${styles.stack}`}>
+      {error && <p className={styles.error}>{error}</p>}
       <header className={styles.header}>
         <h1>Data Sources</h1>
         <div className={styles.row}>

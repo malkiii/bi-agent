@@ -3,19 +3,21 @@
  * choose Exposed Datasets. Secrets are sealed with AES-256-GCM and never leave this module
  * except inside a driver (`withDriver`).
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { MongoServerError, type Db } from 'mongodb';
 import type { z } from 'zod';
 import { NotFoundError, ValidationError } from '../errors';
 import type { Clock } from '../ports';
 import type { SealedSecret, SecretBox } from '../secret-box';
 import type { Users } from '../users/users';
-import type {
-  AnyDriverKind,
-  ConnectionTestResult,
-  DataSourceDriver,
-  DriverRegistry,
-  IntrospectedDataset,
+import {
+  OAuthError,
+  type AnyDriverKind,
+  type ConnectionTestResult,
+  type DataSourceDriver,
+  type DriverContext,
+  type DriverRegistry,
+  type IntrospectedDataset,
 } from './driver';
 
 export interface CatalogDataset extends IntrospectedDataset {
@@ -35,6 +37,8 @@ export interface DataSourceView {
   schemaRefreshedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** Only for OAuth kinds (Salesforce): whether the consent flow has stored tokens. */
+  connected?: boolean;
 }
 
 export interface DataSourceInput {
@@ -63,6 +67,19 @@ export interface DataSources {
   setExposedDatasets(actorSlackUserId: string, id: string, datasetIds: readonly string[]): Promise<DataSourceView>;
   /** Opens the Data Source's driver with decrypted credentials, runs `work`, then closes it. */
   withDriver<T>(id: string, work: (driver: DataSourceDriver) => Promise<T>): Promise<T>;
+  /**
+   * OAuth kinds: starts the consent flow (authorization code + PKCE) and returns the provider
+   * URL to send the admin's browser to. `redirectUri` is the absolute callback URL.
+   */
+  startOAuth(actorSlackUserId: string, id: string, request: { redirectUri: string }): Promise<{ url: string }>;
+  /**
+   * Finishes the consent flow from the callback's query parameters: exchanges the code and
+   * stores the tokens sealed. Throws OAuthError (carrying the Data Source id when known).
+   */
+  completeOAuth(
+    actorSlackUserId: string,
+    callback: { state: string; code?: string; error?: string; errorDescription?: string },
+  ): Promise<DataSourceView>;
 }
 
 /** App Core-only operations, used by modules that manage a Data Source themselves (Uploads). */
@@ -72,6 +89,18 @@ export interface DataSourcesInternal extends DataSources {
   /** Introspects and stores the Datasets, keeping exposure choices and exposing `expose` ids. */
   syncSchema(id: string, actorSlackUserId: string, expose: readonly string[]): Promise<DataSourceView>;
 }
+
+/** OAuth flows not yet completed; expire after OAUTH_STATE_TTL_MS. */
+interface OAuthStateDoc {
+  _id: string;
+  dataSourceId: string;
+  actor: string;
+  codeVerifier: string;
+  redirectUri: string;
+  expiresAt: Date;
+}
+
+const OAUTH_STATE_TTL_MS = 10 * 60_000;
 
 interface DataSourceDoc {
   _id: string;
@@ -97,6 +126,7 @@ interface Deps {
 
 export function createDataSources({ db, clock, users, drivers, secretBox }: Deps): DataSourcesInternal {
   const collection = db.collection<DataSourceDoc>('dataSources');
+  const oauthStates = db.collection<OAuthStateDoc>('oauthStates');
 
   function kindOf(kind: string): AnyDriverKind {
     const found = Object.hasOwn(drivers, kind) ? drivers[kind] : undefined;
@@ -126,6 +156,19 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
       schemaRefreshedAt: doc.schemaRefreshedAt,
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
+      ...(kind?.oauth ? { connected: kind.oauth.isConnected(stored) } : {}),
+    };
+  }
+
+  /** Lets a driver persist secrets it changed (refreshed OAuth tokens) into the saved Data Source. */
+  function contextFor(id: string): DriverContext {
+    return {
+      async saveSecrets(update) {
+        const doc = await collection.findOne({ _id: id });
+        if (!doc) return;
+        const merged = { ...openSecrets(doc), ...withoutUndefined(update) };
+        await collection.updateOne({ _id: id }, { $set: { sealedSecrets: secretBox.seal(JSON.stringify(merged)) } });
+      },
     };
   }
 
@@ -159,8 +202,9 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
     config: unknown,
     secrets: unknown,
     work: (driver: DataSourceDriver) => Promise<T>,
+    savedId?: string,
   ): Promise<T> {
-    const driver = kind.create(config, secrets);
+    const driver = kind.create(config, secrets, savedId ? contextFor(savedId) : undefined);
     try {
       return await work(driver);
     } finally {
@@ -176,8 +220,12 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
 
   async function syncSchema(id: string, actor: string, expose: readonly string[]): Promise<DataSourceView> {
     const doc = await load(id);
-    const introspected = await withDriverFor(kindOf(doc.kind), doc.config, openSecrets(doc), (driver) =>
-      driver.introspect(),
+    const introspected = await withDriverFor(
+      kindOf(doc.kind),
+      doc.config,
+      openSecrets(doc),
+      (driver) => driver.introspect(),
+      doc._id,
     );
     const exposed = new Set([...doc.datasets.filter((d) => d.exposed).map((d) => d.id), ...expose]);
     const datasets = introspected.map((d) => ({ ...d, exposed: exposed.has(d.id) }));
@@ -238,7 +286,13 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
       if (input.kind !== existing.kind) {
         throw new ValidationError('The kind of a Data Source cannot change.', { kind: 'Cannot change' });
       }
-      const { name, config, secrets } = validate(input, openSecrets(existing));
+      const kind = kindOf(existing.kind);
+      let stored = openSecrets(existing);
+      // OAuth tokens belong to the org and app in the config: changing it needs a reconnect.
+      if (kind.oauth && JSON.stringify(validate(input, stored).config) !== JSON.stringify(existing.config)) {
+        stored = Object.fromEntries(Object.entries(stored).filter(([k]) => secretKeys(kind).includes(k)));
+      }
+      const { name, config, secrets } = validate(input, stored);
       return save(id, {
         name,
         config,
@@ -260,7 +314,7 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
       await users.requireAdmin(actor);
       const stored = input.id ? openSecrets(await load(input.id)) : {};
       const { kind, config, secrets } = validate({ ...input, name: input.name || 'untitled' }, stored);
-      return withDriverFor(kind, config, secrets, (driver) => driver.testConnection());
+      return withDriverFor(kind, config, secrets, (driver) => driver.testConnection(), input.id);
     },
 
     async refreshSchema(actor, id) {
@@ -317,9 +371,66 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
 
     async withDriver(id, work) {
       const doc = await load(id);
-      return withDriverFor(kindOf(doc.kind), doc.config, openSecrets(doc), work);
+      return withDriverFor(kindOf(doc.kind), doc.config, openSecrets(doc), work, doc._id);
+    },
+
+    async startOAuth(actor, id, { redirectUri }) {
+      await users.requireAdmin(actor);
+      const doc = await load(id);
+      const kind = kindOf(doc.kind);
+      if (!kind.oauth) throw new ValidationError(`${kind.label} Data Sources do not connect through OAuth.`);
+      const state = randomBytes(24).toString('base64url');
+      const codeVerifier = randomBytes(32).toString('base64url');
+      const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+      await oauthStates.insertOne({
+        _id: state,
+        dataSourceId: id,
+        actor,
+        codeVerifier,
+        redirectUri,
+        expiresAt: new Date(clock.now().getTime() + OAUTH_STATE_TTL_MS),
+      });
+      return { url: kind.oauth.authorizationUrl(doc.config, { redirectUri, state, codeChallenge }) };
+    },
+
+    async completeOAuth(actor, { state, code, error, errorDescription }) {
+      await users.requireAdmin(actor);
+      const pending = state ? await oauthStates.findOneAndDelete({ _id: state }) : null;
+      if (!pending || pending.expiresAt <= clock.now() || pending.actor !== actor) {
+        throw new OAuthError(
+          'This connect attempt has expired or was started by someone else. Start it again.',
+          pending?.dataSourceId,
+        );
+      }
+      const id = pending.dataSourceId;
+      if (error || !code) {
+        throw new OAuthError(`The connection was not approved (${errorDescription || error || 'no code returned'}).`, id);
+      }
+      const doc = await load(id);
+      const kind = kindOf(doc.kind);
+      if (!kind.oauth) throw new OAuthError(`${kind.label} Data Sources do not connect through OAuth.`, id);
+      const stored = openSecrets(doc);
+      let tokens: Record<string, unknown>;
+      try {
+        tokens = await kind.oauth.exchangeCode(doc.config, stored, {
+          code,
+          codeVerifier: pending.codeVerifier,
+          redirectUri: pending.redirectUri,
+        });
+      } catch (e) {
+        throw new OAuthError(e instanceof Error ? e.message : String(e), id);
+      }
+      return save(id, {
+        sealedSecrets: secretBox.seal(JSON.stringify({ ...stored, ...withoutUndefined(tokens) })),
+        updatedAt: clock.now(),
+        updatedBy: actor,
+      });
     },
   };
+}
+
+function withoutUndefined(values: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(values).filter(([, v]) => v !== undefined));
 }
 
 /** Parses `value`, recording the first message per top-level field. */
@@ -342,4 +453,5 @@ function duplicateName(error: unknown): unknown {
 
 export async function ensureDataSourceIndexes(db: Db) {
   await db.collection('dataSources').createIndex({ name: 1 }, { unique: true });
+  await db.collection('oauthStates').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 }

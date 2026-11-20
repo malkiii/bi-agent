@@ -4,7 +4,9 @@ import { NotFoundError, type DataSourceView } from '@/core';
 import { builtInDrivers } from '@/drivers';
 import { DataSourceForm } from '@/web/components/DataSourceForm';
 import { getCore } from '@/web/server-runtime';
+import { OAUTH_CALLBACK_PATH } from '@/web/oauth';
 import {
+  connectDataSource,
   deleteDataSource,
   refreshDataSourceSchema,
   saveDataSource,
@@ -19,6 +21,7 @@ const NOTICES: Record<string, string> = {
   saved: 'Saved.',
   refreshed: 'Schema refreshed.',
   exposed: 'Exposed Datasets saved.',
+  connected: 'Connected.',
 };
 
 async function load(id: string): Promise<DataSourceView> {
@@ -65,6 +68,26 @@ export default async function DataSourcePage({
           <p>This Data Source kind ({ds.kind}) is no longer supported.</p>
         )}
       </section>
+
+      {kind?.oauth && (
+        <section className={`card ${styles.stack}`}>
+          <header className={styles.header}>
+            <h2>Connection</h2>
+            <span className="tag">{ds.connected ? 'connected' : 'not connected'}</span>
+          </header>
+          <p className={styles.muted}>
+            Sign in to {kind.oauth.providerLabel} as the read-only integration user Botley should query as. The
+            tokens are stored encrypted and refreshed automatically. Callback URL to register:{' '}
+            <code>{OAUTH_CALLBACK_PATH}</code> on your Botley URL.
+          </p>
+          <form action={connectDataSource}>
+            <input type="hidden" name="id" value={ds.id} />
+            <button type="submit" className="btn btn--cyan">
+              {ds.connected ? 'Reconnect' : 'Connect'} to {kind.oauth.providerLabel}
+            </button>
+          </form>
+        </section>
+      )}
 
       <section className={`card ${styles.stack}`}>
         <header className={styles.header}>
