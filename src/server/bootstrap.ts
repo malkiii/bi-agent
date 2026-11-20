@@ -1,6 +1,7 @@
 import { MongoClient, type Db } from 'mongodb';
 import { createAppCore, prepareDatabase, type AppCore } from '@/core';
 import { systemClock } from '@/adapters/system-clock';
+import { builtInDrivers } from '@/drivers';
 import { unconfiguredLlm, unconfiguredSlack } from '@/adapters/unconfigured';
 import type { ServerConfig } from './config';
 
@@ -27,6 +28,7 @@ export async function bootstrap(config: ServerConfig): Promise<ServerRuntime> {
     clock: systemClock,
     slack: unconfiguredSlack,
     llm: unconfiguredLlm,
+    drivers: builtInDrivers,
     config: config.core,
   });
   return { core, db, client };

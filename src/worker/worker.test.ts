@@ -10,7 +10,7 @@ test('worker connects to Mongo and logs readiness', async () => {
     config: {
       mongoUrl: inject('mongoUri'),
       mongoDb: `test_${randomUUID().replaceAll('-', '')}`,
-      core: { slackTeamId: 'T0TEAM', adminSlackUserIds: [] },
+      core: { slackTeamId: 'T0TEAM', adminSlackUserIds: [], encryptionKey: 'a'.repeat(64) },
     },
     logger,
   });
