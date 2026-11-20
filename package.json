@@ -23,8 +23,13 @@
     "@ai-sdk/google": "^4.0.122",
     "@ai-sdk/groq": "^4.0.85",
     "@ai-sdk/openai": "^4.0.121",
+    "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@openrouter/ai-sdk-provider": "^3.1.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "@slack/bolt": "^5.1.0",
+    "@slack/web-api": "^8.5.0",
     "ai": "^7.0.177",
+    "exceljs": "^4.4.0",
     "mongodb": "^7.9.1",
     "mssql": "^12.8.0",
     "mysql2": "^3.24.6",
@@ -34,6 +39,9 @@
     "pg": "^8.23.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "vega": "^6.4.0",
+    "vega-embed": "^7.3.0",
+    "vega-lite": "^6.5.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

@@ -10,6 +10,7 @@ import { createPreferences, ensurePreferenceIndexes, type Preferences } from './
 import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
 import { createConversations, ensureConversationIndexes, type Conversations } from './conversations/conversations';
+import { createSlackBot, ensureSlackBotIndexes, type SlackBot } from './slack/slack-bot';
 import { createPinnedQueries, type PinnedQueries } from './pinned-queries/pinned-queries';
 import { createSavedQuestions, ensureSavedQuestionIndexes, type SavedQuestions } from './saved-questions/saved-questions';
 
@@ -25,13 +26,19 @@ export type {
 } from './data-sources/data-sources';
 export * from './data-sources/driver';
 export * from './conversations/answer';
+export { CHART_MAX_ROWS, chartViewSpec, DARK_CHART_PALETTE, LIGHT_CHART_PALETTE, type ChartPalette } from './charts/chart';
+export { tableFileName, tableToCsv, tableToXlsx, TABLE_FILE_TYPES, type TableFileFormat } from './files/table-files';
 export type {
   AskOptions,
   Conversation,
   ConversationMessage,
   ConversationSource,
   ConversationWithMessages,
+  HistoryOptions,
+  HistoryPage,
 } from './conversations/conversations';
+export type { SlackBot, SlackPrompt } from './slack/slack-bot';
+export { OPEN_IN_DASHBOARD_ACTION_ID, SHOW_QUERY_ACTION_ID } from './slack/render';
 export type { AgentToolContext, AgentToolkit, AgentToolkitFactory } from './agent/tools';
 export { pinAnswer, PinnedBlockError } from './pinned-queries/pinned-queries';
 export type {
@@ -56,6 +63,8 @@ export interface AppCoreConfig {
   adminSlackUserIds: readonly string[];
   /** 32-byte AES-256-GCM key (base64 or hex) sealing Data Source credentials. */
   encryptionKey: string;
+  /** The web app's public URL; Slack Answers link to it ("Open in dashboard"). No link when unset. */
+  appUrl?: string;
 }
 
 export interface AppCoreDeps {
@@ -75,6 +84,7 @@ export interface AppCore {
   preferences: Preferences;
   dataSources: DataSources;
   conversations: Conversations;
+  slackBot: SlackBot;
   pinnedQueries: PinnedQueries;
   savedQuestions: SavedQuestions;
 }
@@ -101,6 +111,14 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     preferences: createPreferences(deps),
     dataSources,
     conversations,
+    slackBot: createSlackBot({
+      db: deps.db,
+      clock: deps.clock,
+      slack: deps.slack,
+      conversations,
+      appUrl: deps.config.appUrl,
+      onError: deps.onAgentError,
+    }),
     pinnedQueries,
     savedQuestions: createSavedQuestions({ db: deps.db, clock: deps.clock, users, conversations, pinnedQueries }),
   };
@@ -112,5 +130,6 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensurePreferenceIndexes(db);
   await ensureDataSourceIndexes(db);
   await ensureConversationIndexes(db);
+  await ensureSlackBotIndexes(db);
   await ensureSavedQuestionIndexes(db);
 }

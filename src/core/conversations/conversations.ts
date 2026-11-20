@@ -27,6 +27,21 @@ export interface Conversation {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Set on a Fork: the Slack Conversation it started from. */
+  forkedFrom?: { conversationId: string };
+}
+
+export interface HistoryOptions {
+  source?: ConversationSource['kind'];
+  /** 1-based. */
+  page?: number;
+  pageSize?: number;
+}
+
+export interface HistoryPage {
+  conversations: Conversation[];
+  page: number;
+  hasNextPage: boolean;
 }
 
 export type ConversationMessage =
@@ -48,15 +63,48 @@ export interface Conversations {
   /** A new, empty Web Conversation started by `actor`. */
   startWeb(actorSlackUserId: string): Promise<Conversation>;
   /**
-   * Answers `prompt` in the Conversation and stores both. Resolves with a `failed` Answer
-   * (never rejects) when the agent cannot finish; rejects on access or input errors.
+   * Answers `prompt` in a Web Conversation and stores both. Resolves with a `failed` Answer
+   * (never rejects) when the agent cannot finish; rejects on access or input errors, and with
+   * ValidationError for a Slack Conversation (continue it in Slack, or fork it).
    */
   ask(actorSlackUserId: string, conversationId: string, prompt: string, options?: AskOptions): Promise<Answer>;
+  /**
+   * Like `ask` for any Source (the Slack bot answers Slack threads with it), and also returns
+   * the id of the stored Answer message (Slack puts it in the "Show query" button).
+   */
+  answerPrompt(
+    actorSlackUserId: string,
+    conversationId: string,
+    prompt: string,
+    options?: AskOptions,
+  ): Promise<{ answer: Answer; answerMessageId: string }>;
+  /**
+   * The Slack Conversation for this thread, created on first use. `actor` is added to
+   * `participants` (they are about to send a Prompt in it).
+   */
+  findOrStartSlack(actorSlackUserId: string, thread: { channel: string; threadTs: string }): Promise<Conversation>;
+  /**
+   * One stored Answer by its message id, without a Participant check: for Slack's
+   * "Show query" button, which only people who can see the Answer in Slack can press.
+   */
+  getAnswer(answerMessageId: string): Promise<Answer>;
+  /** One stored Answer by its message id; NotFoundError unless `actor` is a Participant of its Conversation. */
+  getVisibleAnswer(actorSlackUserId: string, answerMessageId: string): Promise<Answer>;
   /** NotFoundError unless `actor` is a Participant. */
   get(actorSlackUserId: string, conversationId: string): Promise<ConversationWithMessages>;
   /** Conversations `actor` took part in that have at least one Prompt, most recent first. */
   list(actorSlackUserId: string, options?: { limit?: number }): Promise<Conversation[]>;
+  /** Like `list`, one page at a time and optionally only one Source. */
+  history(actorSlackUserId: string, options?: HistoryOptions): Promise<HistoryPage>;
+  /**
+   * A Fork: a new Web Conversation for `actor` that starts from a Slack Conversation's
+   * history (its messages are duplicated into the Fork, so they are model context). The Slack Conversation is not
+   * touched. NotFoundError unless `actor` is a Participant; ValidationError for a non-Slack one.
+   */
+  fork(actorSlackUserId: string, slackConversationId: string): Promise<Conversation>;
 }
+
+export const HISTORY_PAGE_SIZE = 20;
 
 interface ConversationDoc {
   _id: string;
@@ -67,6 +115,7 @@ interface ConversationDoc {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  forkedFrom?: { conversationId: string };
 }
 
 type MessageBody =
@@ -109,14 +158,14 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
     return doc;
   }
 
-  async function history(conversationId: string): Promise<ModelMessage[]> {
+  async function modelContext(conversationId: string): Promise<ModelMessage[]> {
     const docs = await messages.find({ conversationId }).sort({ seq: 1 }).toArray();
     return docs.map((m): ModelMessage =>
       m.kind === 'prompt' ? { role: 'user', content: m.text } : { role: 'assistant', content: summarize(m.answer) },
     );
   }
 
-  return {
+  const api: Conversations = {
     async startWeb(actor) {
       const now = clock.now();
       const doc: ConversationDoc = {
@@ -133,14 +182,54 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
       return toConversation(doc);
     },
 
-    async ask(actor, conversationId, prompt, options = {}) {
+    async ask(actor, conversationId, prompt, options) {
+      const conversation = await loadVisible(actor, conversationId);
+      if (conversation.source.kind !== 'web') {
+        throw new ValidationError('This Conversation lives in Slack. Reply in its thread, or open it in the dashboard as a Fork.');
+      }
+      return (await api.answerPrompt(actor, conversationId, prompt, options)).answer;
+    },
+
+    async findOrStartSlack(actor, { channel, threadTs }) {
+      const now = clock.now();
+      const filter = { 'source.kind': 'slack', 'source.channel': channel, 'source.threadTs': threadTs } as const;
+      const update = {
+        $addToSet: { participants: actor },
+        $setOnInsert: {
+          _id: randomUUID(),
+          source: { kind: 'slack' as const, channel, threadTs },
+          title: '',
+          messageCount: 0,
+          createdBy: actor,
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+      try {
+        const doc = await conversations.findOneAndUpdate(filter, update, { upsert: true, returnDocument: 'after' });
+        return toConversation(doc!);
+      } catch (error) {
+        // Two first Prompts in the same thread raced on the unique index: the other one created it.
+        if ((error as { code?: number }).code !== 11000) throw error;
+        const doc = await conversations.findOneAndUpdate(filter, { $addToSet: { participants: actor } }, { returnDocument: 'after' });
+        return toConversation(doc!);
+      }
+    },
+
+    async getAnswer(answerMessageId) {
+      const doc = await messages.findOne({ _id: answerMessageId, kind: 'answer' });
+      if (!doc || doc.kind !== 'answer') throw new NotFoundError('Answer not found.');
+      return doc.answer;
+    },
+
+    async answerPrompt(actor, conversationId, prompt, options = {}) {
       const text = prompt.trim();
       if (!text) throw new ValidationError('Write a Prompt first.', { prompt: 'Required' });
       if (text.length > MAX_PROMPT_LENGTH) {
         throw new ValidationError(`Prompts are limited to ${MAX_PROMPT_LENGTH} characters.`, { prompt: 'Too long' });
       }
       const conversation = await loadVisible(actor, conversationId);
-      const context = await history(conversation._id);
+      const context = await modelContext(conversation._id);
       if (!conversation.title) {
         await conversations.updateOne({ _id: conversation._id }, { $set: { title: shorten(text, TITLE_LENGTH) } });
       }
@@ -162,8 +251,8 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
         onError: onAgentError,
         toolkits,
       });
-      await append(conversation._id, { kind: 'answer', promptId: promptDoc._id, answer, createdAt: clock.now() });
-      return answer;
+      const stored = await append(conversation._id, { kind: 'answer', promptId: promptDoc._id, answer, createdAt: clock.now() });
+      return { answer, answerMessageId: stored._id };
     },
 
     async get(actor, id) {
@@ -175,17 +264,71 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
     async list(actor, { limit = 50 } = {}) {
       const docs = await conversations
         .find({ participants: actor, messageCount: { $gt: 0 } })
-        .sort({ updatedAt: -1 })
+        .sort({ updatedAt: -1, _id: -1 })
         .limit(limit)
         .toArray();
       return docs.map(toConversation);
     },
+
+    async getVisibleAnswer(actor, answerMessageId) {
+      const doc = await messages.findOne({ _id: answerMessageId, kind: 'answer' });
+      if (!doc || doc.kind !== 'answer') throw new NotFoundError('Answer not found.');
+      const visible = await conversations.countDocuments({ _id: doc.conversationId, participants: actor }, { limit: 1 });
+      if (!visible) throw new NotFoundError('Answer not found.');
+      return doc.answer;
+    },
+
+    async history(actor, { source, page = 1, pageSize = HISTORY_PAGE_SIZE } = {}) {
+      const current = Math.max(1, Math.floor(page));
+      const size = Math.min(100, Math.max(1, Math.floor(pageSize)));
+      const docs = await conversations
+        .find({ participants: actor, messageCount: { $gt: 0 }, ...(source ? { 'source.kind': source } : {}) })
+        .sort({ updatedAt: -1, _id: -1 })
+        .skip((current - 1) * size)
+        .limit(size + 1)
+        .toArray();
+      return { conversations: docs.slice(0, size).map(toConversation), page: current, hasNextPage: docs.length > size };
+    },
+
+    async fork(actor, slackConversationId) {
+      const original = await loadVisible(actor, slackConversationId);
+      if (original.source.kind !== 'slack') throw new ValidationError('Only Slack Conversations can be forked.');
+      const copied = await messages.find({ conversationId: original._id }).sort({ seq: 1 }).toArray();
+      const now = clock.now();
+      const doc: ConversationDoc = {
+        _id: randomUUID(),
+        source: { kind: 'web' },
+        title: original.title,
+        participants: [actor],
+        messageCount: copied.length,
+        createdBy: actor,
+        createdAt: now,
+        updatedAt: now,
+        forkedFrom: { conversationId: original._id },
+      };
+      // Messages keep their order and content; Answers point at their copied Prompt.
+      const ids = new Map(copied.map((m) => [m._id, randomUUID()]));
+      const copies = copied.map((m): MessageDoc => {
+        const base = { ...m, _id: ids.get(m._id)!, conversationId: doc._id };
+        return base.kind === 'answer' ? { ...base, promptId: ids.get(base.promptId) ?? base.promptId } : base;
+      });
+      // Messages first: until the Conversation exists they are invisible; on failure, remove them.
+      if (copies.length > 0) await messages.insertMany(copies);
+      try {
+        await conversations.insertOne(doc);
+      } catch (error) {
+        await messages.deleteMany({ conversationId: doc._id }).catch(() => undefined);
+        throw error;
+      }
+      return toConversation(doc);
+    },
   };
+  return api;
 }
 
 function toConversation(doc: ConversationDoc): Conversation {
-  const { _id, source, title, participants, createdBy, createdAt, updatedAt } = doc;
-  return { id: _id, source, title, participants, createdBy, createdAt, updatedAt };
+  const { _id, source, title, participants, createdBy, createdAt, updatedAt, forkedFrom } = doc;
+  return { id: _id, source, title, participants, createdBy, createdAt, updatedAt, ...(forkedFrom ? { forkedFrom } : {}) };
 }
 
 function toMessage(doc: MessageDoc): ConversationMessage {
@@ -208,6 +351,8 @@ export function summarize(answer: Answer): string {
         return b.markdown;
       case 'table':
         return `[Table${b.title ? ` "${b.title}"` : ''}: ${b.rows.length} rows; columns ${b.columns.map((c) => c.name).join(', ')}]`;
+      case 'chart':
+        return `[${b.kind} chart${b.title ? ` "${b.title}"` : ''} of ${b.resultId}]`;
       default:
         return '';
     }
@@ -220,6 +365,7 @@ export function summarize(answer: Answer): string {
 
 export async function ensureConversationIndexes(db: Db) {
   await db.collection('conversations').createIndex({ participants: 1, updatedAt: -1 });
+  await db.collection('conversations').createIndex({ participants: 1, 'source.kind': 1, updatedAt: -1 });
   await db
     .collection('conversations')
     .createIndex({ 'source.channel': 1, 'source.threadTs': 1 }, { unique: true, partialFilterExpression: { 'source.kind': 'slack' } });

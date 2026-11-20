@@ -10,9 +10,18 @@ import styles from './chat.module.css';
 
 /**
  * The web chat: the Conversation so far plus the prompt box. Sends each Prompt to
- * POST /api/chat and renders the streamed Answer as it arrives.
+ * POST /api/chat and renders the streamed Answer as it arrives. `readOnly` shows the
+ * messages only (Slack Conversations, which continue in Slack or in a Fork).
  */
-export function ChatView({ conversationId: initialId, initialItems }: { conversationId?: string; initialItems: ChatItem[] }) {
+export function ChatView({
+  conversationId: initialId,
+  initialItems,
+  readOnly = false,
+}: {
+  conversationId?: string;
+  initialItems: ChatItem[];
+  readOnly?: boolean;
+}) {
   const [conversationId, setConversationId] = useState(initialId);
   const [items, setItems] = useState<ChatItem[]>(initialItems);
   const [prompt, setPrompt] = useState('');
@@ -124,7 +133,7 @@ export function ChatView({ conversationId: initialId, initialItems }: { conversa
             ) : (
               <li key={item.id}>
                 <AnswerView {...item} />
-                {conversationId && item.messageId && item.status === 'complete' && item.queries.some((q) => q.ok) && (
+                {!readOnly && conversationId && item.messageId && item.status === 'complete' && item.queries.some((q) => q.ok) && (
                   <SaveQuestionButton conversationId={conversationId} answerMessageId={item.messageId} />
                 )}
               </li>
@@ -132,25 +141,27 @@ export function ChatView({ conversationId: initialId, initialItems }: { conversa
           )}
         </ol>
       )}
-      <form className={`${styles.promptBox} ${empty ? styles.promptBoxBig : ''}`} onSubmit={submit}>
-        <label htmlFor="prompt" className={styles.srOnly}>
-          Your question
-        </label>
-        <textarea
-          id="prompt"
-          name="prompt"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={empty ? 'Ask Botley about your data, e.g. "How many orders did we ship last week by region?"' : 'Ask a follow-up…'}
-          rows={empty ? 4 : 2}
-          maxLength={8000}
-          disabled={busy}
-        />
-        <button type="submit" className="btn" disabled={busy || !prompt.trim()}>
-          {busy ? 'Answering…' : 'Ask'}
-        </button>
-      </form>
+      {!readOnly && (
+        <form className={`${styles.promptBox} ${empty ? styles.promptBoxBig : ''}`} onSubmit={submit}>
+          <label htmlFor="prompt" className={styles.srOnly}>
+            Your question
+          </label>
+          <textarea
+            id="prompt"
+            name="prompt"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={empty ? 'Ask Botley about your data, e.g. "How many orders did we ship last week by region?"' : 'Ask a follow-up…'}
+            rows={empty ? 4 : 2}
+            maxLength={8000}
+            disabled={busy}
+          />
+          <button type="submit" className="btn" disabled={busy || !prompt.trim()}>
+            {busy ? 'Answering…' : 'Ask'}
+          </button>
+        </form>
+      )}
     </div>
   );
 }

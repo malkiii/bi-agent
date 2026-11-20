@@ -22,6 +22,15 @@ export interface ServerConfig {
   core: AppCoreConfig;
   /** The default LLM provider and model; null when LLM_PROVIDER is unset (Answers then fail with a friendly error). */
   llm: LlmSettings | null;
+  /** Slack bot (worker Socket Mode, outbound messages); absent when SLACK_BOT_TOKEN is unset. */
+  slack?: SlackSettings;
+}
+
+export interface SlackSettings {
+  /** Bot token (`xoxb-…`) for the Web API. */
+  botToken: string;
+  /** App-level token (`xapp-…`, `connections:write`) for Socket Mode; only the worker needs it. */
+  appToken?: string;
 }
 
 export const DEFAULT_OLLAMA_BASE_URL = 'http://localhost:11434/api';
@@ -50,6 +59,10 @@ const schema = z
     OPENROUTER_API_KEY: optional,
     GROQ_API_KEY: optional,
     OLLAMA_BASE_URL: optional,
+    SLACK_BOT_TOKEN: optional.refine((v) => !v || v.startsWith('xoxb-'), 'SLACK_BOT_TOKEN must be a bot token (xoxb-…)'),
+    SLACK_APP_TOKEN: optional.refine((v) => !v || v.startsWith('xapp-'), 'SLACK_APP_TOKEN must be an app-level token (xapp-…)'),
+    APP_URL: optional.refine((v) => !v || isHttpUrl(v), 'APP_URL must be an http(s) URL, e.g. https://botley.example.com'),
+    AUTH_URL: optional,
   })
   .superRefine((e, ctx) => {
     if (!e.LLM_PROVIDER) return;
@@ -76,6 +89,20 @@ function llmSettings(e: Env): LlmSettings | null {
   return { provider: e.LLM_PROVIDER, model: e.LLM_MODEL, credentials };
 }
 
+function isHttpUrl(text: string): boolean {
+  try {
+    return ['http:', 'https:'].includes(new URL(text).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/** Where people open the web app: APP_URL, else Auth.js's AUTH_URL (when it is a valid URL). */
+function appUrl(e: Env): { appUrl?: string } {
+  const url = e.APP_URL ?? (e.AUTH_URL && isHttpUrl(e.AUTH_URL) ? e.AUTH_URL : undefined);
+  return url ? { appUrl: url.replace(/\/+$/, '') } : {};
+}
+
 export function parseServerConfig(env: Record<string, string | undefined>): ServerConfig {
   const result = schema.safeParse(env);
   if (!result.success) {
@@ -92,7 +119,9 @@ export function parseServerConfig(env: Record<string, string | undefined>): Serv
         .map((id) => id.trim())
         .filter(Boolean),
       encryptionKey: e.ENCRYPTION_KEY,
+      ...appUrl(e),
     },
     llm: llmSettings(e),
+    ...(e.SLACK_BOT_TOKEN && { slack: { botToken: e.SLACK_BOT_TOKEN, ...(e.SLACK_APP_TOKEN && { appToken: e.SLACK_APP_TOKEN }) } }),
   };
 }

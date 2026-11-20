@@ -55,6 +55,38 @@ describe('server config from environment', () => {
     });
   });
 
+  describe('Slack bot tokens', () => {
+    test('are read when set', () => {
+      const config = parseServerConfig({ ...minimal, SLACK_BOT_TOKEN: 'xoxb-1', SLACK_APP_TOKEN: 'xapp-1' });
+
+      expect(config.slack).toEqual({ botToken: 'xoxb-1', appToken: 'xapp-1' });
+    });
+
+    test('are optional (the worker then runs without Slack)', () => {
+      expect(parseServerConfig(minimal).slack).toBeUndefined();
+    });
+
+    test('refuse tokens of the wrong kind', () => {
+      expect(() => parseServerConfig({ ...minimal, SLACK_BOT_TOKEN: 'xapp-1' })).toThrow(/SLACK_BOT_TOKEN/);
+      expect(() => parseServerConfig({ ...minimal, SLACK_BOT_TOKEN: 'xoxb-1', SLACK_APP_TOKEN: 'xoxb-2' })).toThrow(
+        /SLACK_APP_TOKEN/,
+      );
+    });
+  });
+
+  describe('the web app URL (Slack "Open in dashboard" links)', () => {
+    test('is APP_URL, else AUTH_URL, without a trailing slash', () => {
+      expect(parseServerConfig({ ...minimal, AUTH_URL: 'https://botley.example/' }).core.appUrl).toBe('https://botley.example');
+      expect(parseServerConfig({ ...minimal, AUTH_URL: 'https://a.example', APP_URL: 'https://b.example' }).core.appUrl).toBe(
+        'https://b.example',
+      );
+    });
+
+    test('must be an http(s) URL', () => {
+      expect(() => parseServerConfig({ ...minimal, APP_URL: 'botley.example' })).toThrow(/APP_URL/);
+    });
+  });
+
   test('reads a comma-separated admin list, ignoring blanks and spaces', () => {
     const config = parseServerConfig({ ...minimal, ADMIN_SLACK_USER_IDS: ' U1, U2 ,,U3 ' });
 
