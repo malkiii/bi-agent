@@ -37,6 +37,7 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 | `AUTH_URL` | web | The https URL people open. Compose sets `AUTH_TRUST_HOST=true`. |
 | `SLACK_TEAM_ID` | web, worker | The only workspace allowed to sign in. Required. |
 | `ADMIN_SLACK_USER_IDS` | web, worker | Comma-separated initial admins. |
+| `ENCRYPTION_KEY` | web, worker | 32-byte key, base64 or hex (`openssl rand -base64 32`). Encrypts Data Source credentials (AES-256-GCM). Required; keep it stable, or saved credentials become unreadable. |
 | `MONGO_URL` | web, worker | Required outside compose. Compose always uses `mongodb://mongo:27017`. |
 | `MONGO_DB` | web, worker | Database name. Default `botley`. |
 | `WEB_PORT` | compose | Host port for plain-http `web`. Default 3000. |
@@ -46,7 +47,7 @@ Process config is parsed and validated in `src/server/config.ts`. Add new variab
 
 ## Develop
 
-Node 24 and Docker (tests start a real MongoDB with Testcontainers).
+Node 24 and Docker (tests start real MongoDB and PostgreSQL servers with Testcontainers).
 
 ```sh
 npm install
@@ -54,7 +55,7 @@ docker run -d --name botley-mongo -p 27017:27017 mongo:8   # or any Mongo
 MONGO_URL=mongodb://localhost:27017 npm run dev            # web on :3000 (reads .env)
 MONGO_URL=mongodb://localhost:27017 npm run dev:worker     # worker (tsx watch, reads .env)
 
-npm test            # vitest; starts mongo:8 via testcontainers (or set MONGO_TEST_URL)
+npm test            # vitest; starts mongo:8 + postgres:17 via testcontainers (or set MONGO_TEST_URL / POSTGRES_TEST_URL)
 npm run lint        # eslint
 npm run typecheck   # next typegen + tsc
 npm run build       # next build (standalone) + dist/worker.mjs (esbuild)
@@ -69,16 +70,17 @@ src/
   core/            App Core: transport-agnostic use cases. The main test seam.
     index.ts       createAppCore(deps), prepareDatabase(db), public types and errors
     ports.ts       Clock, SlackGateway, LanguageModelProvider
-<<<<<<< HEAD
-    errors.ts      AppError subclasses (WrongWorkspaceError, ForbiddenError, NotFoundError)
-    users/         Slack sign-in, roles, requireAdmin
-    preferences/   Per-user UI preferences (theme)
-=======
-    errors.ts      AppError subclasses (WrongWorkspaceError, ForbiddenError, NotFoundError, LastAdminError)
+    errors.ts      AppError subclasses (WrongWorkspaceError, ForbiddenError, NotFoundError, LastAdminError, ValidationError)
+    secret-box.ts  AES-256-GCM sealing of secrets under ENCRYPTION_KEY
     users/         Slack sign-in, roles (list, setRole), requireAdmin
->>>>>>> origin/integration/spec-1
+    preferences/   Per-user UI preferences (theme)
+    data-sources/  driver.ts (the driver contract types), data-sources.ts (admin CRUD, test, introspect, Exposed Datasets, withDriver)
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
   adapters/        Production implementations of ports (system clock, ...)
+  drivers/         Data Source drivers. index.ts = builtInDrivers registry
+    contract/      describeDriverContract(): the shared suite every driver runs
+    sql/           read-only-guard.ts: single SELECT/WITH check shared by SQL drivers
+    postgres/      postgres.ts (driver + kind), testing.ts (per-test databases), postgres.test.ts
   server/          Process wiring shared by web and worker: env config, bootstrap()
   worker/          Worker process: main.ts (entry), worker.ts (startWorker)
   web/             Web-only code: auth helpers, server runtime, components
@@ -89,7 +91,7 @@ src/
     signin/        Public sign-in page
   auth.ts          Auth.js config (Slack OIDC only)
   proxy.ts         Per-request access control (Next 16 "proxy", formerly middleware)
-test/global-setup.ts   Starts MongoDB once per test run
+test/global-setup.ts   Starts MongoDB and PostgreSQL once per test run
 ```
 
 ### Conventions
@@ -138,3 +140,36 @@ setBotleyState('error');                  // e.g. a failed tool call or request 
 Events wired so far: idle by default, `thinking` while sign-in or sign-out is pending, `success` right after sign-in, `error` on the sign-in error, the forbidden page and the `error.tsx` boundaries, and `empty` on the 404 page. Chat (thinking/answering), Data Source tests and Reports should hook in as described above when they are built.
 
 The Slack avatar `public/botley-avatar.png` (1024 px) is rendered from `public/botley.svg`. After changing the SVG, re-render it with any SVG rasteriser, e.g. `@resvg/resvg-js`: `new Resvg(svg, { fitTo: { mode: 'width', value: 1024 } }).render().asPng()`.
+
+## Data Source drivers
+
+Every Data Source kind implements `DataSourceDriver` (`src/core/data-sources/driver.ts`):
+
+- `dialect`: the query language and flavour, plus short guidance for the model.
+- `testConnection()`: never throws; returns `{ ok: true }` or `{ ok: false, error }` with a readable message.
+- `introspect()`: Datasets (`id`, `name`, `schema`, `kind`) with columns. Each column has a normalised `type` (`string | integer | number | boolean | date | datetime | json | other`) and the engine's `nativeType`. `id` is unique within the source and is how a query refers to the Dataset (e.g. `public.orders`, `sales."Big Deals"`).
+- `execute(query, limits?)`: `{ columns, rows (arrays), truncated, durationMs }`. Default limits are `DEFAULT_QUERY_LIMITS` (30 s, 10 000 rows). It throws `QueryRejectedError` (not a single read-only query), `QueryTimeoutError`, or `QueryFailedError` (the engine's message, which goes back to the model so it can fix the query). Numbers are JS numbers only when exact. Integers too large for JS stay strings, and dates without a zone stay as the engine's text.
+- `close()`.
+
+Read-only enforcement lives in the driver, so no caller can bypass it. For SQL, `assertReadOnlySql(sql, flavour)` (`src/drivers/sql/read-only-guard.ts`) accepts one `SELECT`/`WITH` statement with no write, DDL, locking or file keyword outside strings, quoted names and comments. It understands each flavour's quoting (`postgresql`, `mysql`, `tsql`, `duckdb`). The driver then adds engine-level protection. Postgres runs the query as a cursor in `BEGIN TRANSACTION READ ONLY` (always rolled back) over the extended protocol, with `SET LOCAL statement_timeout`, and fetches only `maxRows + 1` rows.
+
+A `DriverKind` registers a driver with the App Core. It has `kind`, `label`, `fields` (form descriptors; `secret: true` fields are encrypted and only ever returned as "set" flags), zod `configSchema`/`secretsSchema`, and `create(config, secrets)`. The admin form renders from `fields`, so a simple kind needs no UI code. App Core code gets a driver with `core.dataSources.withDriver(id, fn)`, which decrypts the credentials and closes the driver afterwards.
+
+### Adding a kind (MySQL, SQL Server, MongoDB, Salesforce, Uploads)
+
+1. Write `src/drivers/<kind>/<kind>.ts` that exports the driver factory and a `DriverKind`. SQL kinds call `assertReadOnlySql(query, '<flavour>')` first, then add whatever the engine offers (MySQL: `START TRANSACTION READ ONLY` + `MAX_EXECUTION_TIME`; SQL Server has no read-only transaction, so roll back and rely on the guard plus a `db_datareader` login). Non-SQL kinds validate their structured query and refuse `$out`, `$merge`, `$function`, `$where` and `$accumulator` with `QueryRejectedError`.
+2. Add the test server to `test/global-setup.ts` (`project.provide('<kind>Uri', …)`, with a `<KIND>_TEST_URL` override) and write a `testing.ts` helper that creates an isolated database for each caller. Salesforce uses a fake HTTP server instead.
+3. In `src/drivers/<kind>/<kind>.test.ts`, seed the contract fixture (Dataset `orders`: `id` integer, `region` string, `amount` non-integer number; rows `(1,'north',10.5) (2,'south',20) (3,'north',7.25)`) and invoke the suite:
+
+   ```ts
+   describeDriverContract({
+     kind: 'mysql',
+     queries: { ordersById, twentyFiveRows, slow /* ≥ 5 s */, forbidden: { INSERT: '…', 'multiple statements': '…' } },
+     async setup() {
+       return { driver, unreachableDriver /* wrong password */, countOrders, teardown };
+     },
+   });
+   ```
+
+   Add tests for anything kind-specific (views, type mapping, quoting) in the same file.
+4. Register the kind in `builtInDrivers` (`src/drivers/index.ts`). The admin UI ("Add <label>") and the App Core pick it up from there.

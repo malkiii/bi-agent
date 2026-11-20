@@ -1,5 +1,15 @@
 import { z } from 'zod';
 import type { AppCoreConfig } from '@/core';
+import { parseEncryptionKey } from '@/core/secret-box';
+
+const isEncryptionKey = (text: string) => {
+  try {
+    parseEncryptionKey(text);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Process configuration shared by `web` and `worker`, read from the environment.
@@ -18,6 +28,7 @@ const schema = z.object({
   MONGO_DB: z.string().trim().min(1).default('botley'),
   SLACK_TEAM_ID: required('SLACK_TEAM_ID'),
   ADMIN_SLACK_USER_IDS: z.string().default(''),
+  ENCRYPTION_KEY: required('ENCRYPTION_KEY').refine(isEncryptionKey, 'ENCRYPTION_KEY must be 32 bytes, base64- or hex-encoded (openssl rand -base64 32)'),
 });
 
 export function parseServerConfig(env: Record<string, string | undefined>): ServerConfig {
@@ -35,6 +46,7 @@ export function parseServerConfig(env: Record<string, string | undefined>): Serv
       adminSlackUserIds: e.ADMIN_SLACK_USER_IDS.split(',')
         .map((id) => id.trim())
         .filter(Boolean),
+      encryptionKey: e.ENCRYPTION_KEY,
     },
   };
 }

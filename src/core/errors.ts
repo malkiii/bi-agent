@@ -23,6 +23,16 @@ export class ForbiddenError extends AppError {
   }
 }
 
+/** Input failed validation. `fieldErrors` maps a field key to a readable message. */
+export class ValidationError extends AppError {
+  constructor(
+    message: string,
+    readonly fieldErrors: Readonly<Record<string, string>> = {},
+  ) {
+    super('invalid_input', message);
+  }
+}
+
 export class NotFoundError extends AppError {
   constructor(message = 'Not found.') {
     super('not_found', message);

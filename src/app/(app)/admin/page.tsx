@@ -5,10 +5,15 @@ export default function AdminPage() {
   return (
     <section className="card">
       <h1>Admin</h1>
-      <p>Data Sources, Datasets, Synonyms, roles and the audit log will live here.</p>
-      <p>
-        <Link href="/admin/users">Users &amp; roles</Link>
-      </p>
+      <ul>
+        <li>
+          <Link href="/admin/data-sources">Data Sources</Link>: connections, credentials and Exposed Datasets.
+        </li>
+        <li>
+          <Link href="/admin/users">Users &amp; roles</Link>
+        </li>
+      </ul>
+      <p>Synonyms and the audit log will live here too.</p>
     </section>
   );
 }
