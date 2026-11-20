@@ -81,6 +81,7 @@ src/
     contract/      describeDriverContract(): the shared suite every driver runs
     sql/           read-only-guard.ts: single SELECT/WITH check shared by SQL drivers
     postgres/      postgres.ts (driver + kind), testing.ts (per-test databases), postgres.test.ts
+    salesforce/    salesforce.ts (SOQL driver + OAuth kind), testing.ts (fake Salesforce HTTP server)
   server/          Process wiring shared by web and worker: env config, bootstrap()
   worker/          Worker process: main.ts (entry), worker.ts (startWorker)
   web/             Web-only code: auth helpers, server runtime, components
@@ -173,3 +174,21 @@ A `DriverKind` registers a driver with the App Core. It has `kind`, `label`, `fi
 
    Add tests for anything kind-specific (views, type mapping, quoting) in the same file.
 4. Register the kind in `builtInDrivers` (`src/drivers/index.ts`). The admin UI ("Add <label>") and the App Core pick it up from there.
+
+### OAuth kinds and token refresh
+
+A kind connected through a consent screen sets `DriverKind.oauth` (`authorizationUrl`, `exchangeCode`, `isConnected`). The App Core owns the flow: `dataSources.startOAuth(actor, id, { redirectUri })` stores a single-use state with the PKCE verifier (Mongo `oauthStates`, 10-minute expiry, bound to the admin who started it) and returns the provider URL. The callback route `GET /api/admin/data-sources/oauth/callback` calls `dataSources.completeOAuth`, which exchanges the code and seals the tokens with the other secrets. Tokens are secrets that aren't form fields, so they're never shown, and they're dropped when an edit changes the config (another org or app means reconnecting). The callback URL is built from `AUTH_URL`.
+
+`DriverKind.create(config, secrets, context)` gets a `context.saveSecrets(update)` when the driver belongs to a saved Data Source. Drivers call it to persist refreshed tokens.
+
+### Salesforce
+
+`src/drivers/salesforce/salesforce.ts`: SOQL over REST (API `v68.0` by default) as the integration user, using plain `fetch`.
+
+- **Setup:** in Salesforce, create an **External Client App** (Connected Apps can't be created any more). Enable OAuth, require PKCE, use the scopes `api refresh_token`, set the callback to `$AUTH_URL/api/admin/data-sources/oauth/callback`, and set the refresh token policy to "valid until revoked". In Botley, add a Salesforce Data Source with the login URL (`https://login.salesforce.com`, `https://test.salesforce.com` or a My Domain URL) and the consumer key and secret. Then click **Connect to Salesforce** on its page and sign in as a read-only integration user.
+- **Read-only:** the driver only sends GETs (query, sobjects, describe). `assertReadOnlySoql` accepts one `SELECT` with no `;` and refuses `FOR UPDATE`, `FOR VIEW`, `FOR REFERENCE` and `UPDATE TRACKING|VIEWSTAT`, because those lock records or write stats.
+- **Limits:** pages are fetched through `nextRecordsUrl` until `maxRows + 1` records have arrived. One abort signal covers every page and any refresh, so the timeout applies to the whole query.
+- **Tokens:** on a 401 the driver refreshes once (shared between concurrent calls), retries, and persists the new access token (and a rotated refresh token) through `saveSecrets`. `invalid_grant` becomes "Reconnect the Data Source".
+- **Results:** `attributes` are stripped. Parent relationships become dot-path columns (`Owner.Name`) and child subqueries become JSON arrays. Column types are inferred from the values, because SOQL results carry no column metadata. An empty result takes its column names from the SELECT list, and `SELECT COUNT() FROM X` returns one `count` row.
+- **Introspection:** queryable objects, minus `*History`, `*Share`, `*Feed` and `*ChangeEvent`, each described with up to 6 parallel GETs. Each object is a Dataset with `kind: 'object'`, `schema: null` and `id` set to the API name.
+- **Tests:** `src/drivers/salesforce/testing.ts` starts a fake org over real HTTP (OAuth token endpoint with PKCE checks, query paging, describe, 401s and revoked refresh tokens). The whole driver contract runs against it. Its SQL-specific parts carry over as follows: "forbidden" uses DML text, `;` chaining and the side-effect clauses above, and `countOrders` reads the fake's fixed records, since the fake answers only GET. A kind-specific test checks that refused queries never reach the server. The OAuth flow is tested through the App Core in `src/core/data-sources/oauth.test.ts`.

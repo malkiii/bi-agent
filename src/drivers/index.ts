@@ -4,7 +4,9 @@
  */
 import type { DriverRegistry } from '@/core/data-sources/driver';
 import { postgresKind } from './postgres/postgres';
+import { salesforceKind } from './salesforce/salesforce';
 
 export const builtInDrivers: DriverRegistry = {
   [postgresKind.kind]: postgresKind,
+  [salesforceKind.kind]: salesforceKind,
 };
