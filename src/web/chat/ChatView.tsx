@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useBotley } from '@/web/botley/BotleyProvider';
 import { SaveQuestionButton } from '@/web/saved-questions/SaveQuestionButton';
@@ -14,6 +15,8 @@ import styles from './chat.module.css';
  * POST /api/chat and renders the streamed Answer as it arrives. `readOnly` shows the
  * messages only (Slack Conversations, which continue in Slack or in a Fork). With
  * `dataSources`, a picker locks the Conversation to some of them (sent with each Prompt).
+ * `openAfterAnswer` (the dashboard home) moves to the Conversation's own page once the first
+ * Answer has streamed in, so it continues there.
  */
 export function ChatView({
   conversationId: initialId,
@@ -21,6 +24,7 @@ export function ChatView({
   readOnly = false,
   dataSources = [],
   lockedDataSourceIds = [],
+  openAfterAnswer = false,
 }: {
   conversationId?: string;
   initialItems: ChatItem[];
@@ -28,6 +32,7 @@ export function ChatView({
   /** Data Sources the agent can query, to lock the Conversation to. */
   dataSources?: DataSourceOption[];
   lockedDataSourceIds?: string[];
+  openAfterAnswer?: boolean;
 }) {
   const [conversationId, setConversationId] = useState(initialId);
   const [items, setItems] = useState<ChatItem[]>(initialItems);
@@ -37,6 +42,7 @@ export function ChatView({
   const [locked, setLocked] = useState(() => lockedDataSourceIds.filter((id) => dataSources.some((ds) => ds.id === id)));
   const seq = useRef(0);
   const { setBotleyState, settleBotley } = useBotley();
+  const router = useRouter();
 
   async function ask(text: string) {
     const answerId = `live-${++seq.current}`;
@@ -53,10 +59,12 @@ export function ChatView({
     setBotleyState('thinking');
 
     let failed = false;
+    let startedId: string | undefined;
     const onEvent = (event: ChatStreamEvent) => {
       switch (event.type) {
         case 'conversation':
           if (event.id !== conversationId) {
+            startedId = event.id;
             setConversationId(event.id);
             window.history.replaceState(null, '', `/chat/${event.id}`);
           }
@@ -114,6 +122,7 @@ export function ChatView({
       setBusy(false);
       if (failed) setBotleyState('error');
       else settleBotley();
+      if (openAfterAnswer && startedId) router.push(`/chat/${startedId}`);
     }
   }
 

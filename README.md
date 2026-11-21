@@ -96,6 +96,7 @@ src/
     agent/         The agent loop: agent.ts (runAgent), tools.ts (toolkits, incl. combineResults), catalog.ts (what the agent may query: lock, Channel Default), answer-draft.ts
     pinned-queries/ Pin an Answer's queries + layout, re-run them without the LLM (Saved Questions, Reports, KPIs)
     saved-questions/ Saved Questions: save an Answer, private/shared, re-run
+    home/          The dashboard home's overview: recent Conversations, upcoming Report Runs, firing KPI Alerts, KPI tiles
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
   adapters/        Production implementations of ports (system clock, llm.ts = the six LLM providers, ...)
   drivers/         Data Source drivers. index.ts = builtInDrivers registry

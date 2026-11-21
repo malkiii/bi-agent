@@ -165,6 +165,11 @@ interface Deps {
 export { KPI_NAME_MAX };
 export const KPI_ALERT_JOB = 'kpiAlert';
 
+/** Currently firing: the condition held at the last check, and the Alert is still checking (not paused). */
+export function isFiring(alert: Pick<KpiAlert, 'status' | 'state'>): boolean {
+  return alert.status === 'active' && alert.state === 'fired';
+}
+
 export function kpiPath(kpiId: string): string {
   return `/kpis/${kpiId}`;
 }

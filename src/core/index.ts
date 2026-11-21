@@ -24,6 +24,7 @@ import { createChannelDefaults, type ChannelDefaults } from './channel-defaults/
 import { createReports, ensureReportIndexes, type Reports } from './reports/reports';
 import { createScheduler, ensureJobIndexes, type Scheduler } from './scheduler/scheduler';
 import { createKpis, ensureKpiIndexes, type Kpis } from './kpis/kpis';
+import { createHome, type Home } from './home/home';
 
 export * from './errors';
 export type * from './ports';
@@ -101,10 +102,11 @@ export type {
   ReportStatus,
 } from './reports/reports';
 export { describeSchedule, MONTHLY_MAX_DAY, WEEKDAYS, type ReportSchedule } from './reports/schedule';
-export { KPI_NAME_MAX, kpiPath } from './kpis/kpis';
+export { isFiring, KPI_NAME_MAX, kpiPath } from './kpis/kpis';
 export type { Kpi, KpiAlert, KpiAlertInput, KpiAlertState, KpiAlertStatus, Kpis, KpiStatus, KpiValue } from './kpis/kpis';
 export { describeCondition, formatNumber, type KpiAlertCondition } from './kpis/condition';
 export type { Scheduler } from './scheduler/scheduler';
+export type { Home, HomeOverview } from './home/home';
 
 export interface AppCoreConfig {
   /** Only this Slack workspace may sign in. */
@@ -149,6 +151,8 @@ export interface AppCore {
   reports: Reports;
   /** Named single numbers on Pinned Queries, and the KPI Alerts that watch them. */
   kpis: Kpis;
+  /** The dashboard home's overview for the signed-in person. */
+  home: Home;
   /** Runs due scheduled work (Report Runs); the worker calls `runDue()` on a timer. */
   scheduler: Scheduler;
   uploads: Uploads;
@@ -185,6 +189,18 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     appUrl: deps.config.appUrl,
     onError: deps.onAgentError,
   });
+  const kpis = createKpis({
+    db: deps.db,
+    clock: deps.clock,
+    users,
+    conversations,
+    pinnedQueries,
+    slack: deps.slack,
+    llm: llmSettings.active,
+    jobs,
+    appUrl: deps.config.appUrl,
+    onError: deps.onAgentError,
+  });
   return {
     users,
     preferences: createPreferences(deps),
@@ -203,18 +219,8 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     pinnedQueries,
     savedQuestions,
     reports,
-    kpis: createKpis({
-      db: deps.db,
-      clock: deps.clock,
-      users,
-      conversations,
-      pinnedQueries,
-      slack: deps.slack,
-      llm: llmSettings.active,
-      jobs,
-      appUrl: deps.config.appUrl,
-      onError: deps.onAgentError,
-    }),
+    kpis,
+    home: createHome({ conversations, reports, kpis }),
     scheduler,
     uploads: createUploads({
       db: deps.db,

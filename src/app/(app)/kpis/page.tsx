@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { formatNumber, kpiPath } from '@/core';
+import { formatNumber, isFiring, kpiPath } from '@/core';
 import { Botley } from '@/web/components/Botley';
 import chat from '@/web/chat/chat.module.css';
 import { requireUser } from '@/web/current-user';
@@ -30,7 +30,7 @@ export default async function KpisPage() {
       ) : (
         <ul className={styles.list}>
           {kpis.map((k) => {
-            const fired = alerts.filter((a) => a.kpiId === k.id && a.state === 'fired').length;
+            const fired = alerts.filter((a) => a.kpiId === k.id && isFiring(a)).length;
             return (
               <li key={k.id} className={`card ${styles.item}`}>
                 <span>
