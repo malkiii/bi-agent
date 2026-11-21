@@ -70,3 +70,85 @@
   border-left: var(--border);
   padding-left: var(--space-4);
 }
+
+.error a {
+  color: inherit;
+}
+
+.failedTag {
+  background: var(--color-danger);
+}
+
+/*
+ * A printed Report Run (A4): no colour fills, tables may break between rows but never inside
+ * one, charts and the commentary are never split, and wide content is fitted to the page.
+ */
+@media print {
+  .run {
+    max-width: none;
+    gap: 10pt;
+  }
+
+  .run h1,
+  .run h2,
+  .run figcaption {
+    break-after: avoid;
+  }
+
+  .run :global(.card) {
+    padding: 0;
+    border: 0;
+  }
+
+  .run .error {
+    background: none;
+    color: var(--color-ink);
+    border: 2px solid var(--color-ink);
+    break-inside: avoid;
+  }
+
+  .run .commentary {
+    break-inside: avoid;
+  }
+
+  /* Charts (figures without a table) stay on one page. */
+  .run figure:not(:has(table)) {
+    break-inside: avoid;
+  }
+
+  /* The table's scroll box and the chart's canvas: show everything, no fills. */
+  .run figure > div {
+    max-height: none;
+    overflow: visible;
+    background: none;
+  }
+
+  .run table th {
+    position: static;
+    background: none;
+    border-bottom: 2px solid var(--color-ink);
+  }
+
+  .run table th,
+  .run table td {
+    white-space: normal;
+  }
+
+  .run thead {
+    display: table-header-group;
+  }
+
+  .run tr {
+    break-inside: avoid;
+  }
+
+  .run svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* vega-embed's "…" export menu. */
+  .run :global(.vega-embed) :global(details) {
+    display: none;
+  }
+}

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { AppError, ValidationError, type ReportDestinationInput, type ReportSchedule } from '@/core';
+import { AppError, reportPath, ValidationError, type ReportDestinationInput, type ReportSchedule } from '@/core';
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 
@@ -36,7 +36,7 @@ export async function createReportAction(_prev: ReportFormState, form: FormData)
     throw error;
   }
   revalidatePath('/reports');
-  redirect(`/reports/${id}`);
+  redirect(reportPath(id));
 }
 
 export interface ApproveState {
@@ -54,8 +54,48 @@ export async function approveReportAction(_prev: ApproveState, form: FormData): 
     throw error;
   }
   revalidatePath('/reports');
-  revalidatePath(`/reports/${id}`);
+  revalidatePath(reportPath(id));
   return {};
+}
+
+/** Changes a Report's title, schedule, timezone and destination. */
+export async function updateReportAction(_prev: ReportFormState, form: FormData): Promise<ReportFormState> {
+  const user = await requireUser();
+  const id = text(form, 'id');
+  try {
+    await (
+      await getCore()
+    ).reports.update(user.slackUserId, id, {
+      title: text(form, 'title'),
+      schedule: scheduleFrom(form),
+      timezone: text(form, 'timezone'),
+      destination: destinationFrom(form),
+    });
+  } catch (error) {
+    if (error instanceof ValidationError) return { message: error.message, fieldErrors: { ...error.fieldErrors } };
+    if (error instanceof AppError) return { message: error.message };
+    throw error;
+  }
+  revalidatePath('/reports');
+  redirect(reportPath(id));
+}
+
+/** Pauses an active Report or resumes a paused one (`change` is `pause` or `resume`). */
+export async function pauseOrResumeReportAction(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = text(form, 'id');
+  const reports = (await getCore()).reports;
+  await (text(form, 'change') === 'resume' ? reports.resume(user.slackUserId, id) : reports.pause(user.slackUserId, id));
+  revalidatePath('/reports');
+  revalidatePath(reportPath(id));
+}
+
+/** Admin only: deletes a Report; its Report Runs stay. */
+export async function deleteReportAction(form: FormData): Promise<void> {
+  const user = await requireUser();
+  await (await getCore()).reports.remove(user.slackUserId, text(form, 'id'));
+  revalidatePath('/reports');
+  redirect('/reports');
 }
 
 function text(form: FormData, key: string): string {

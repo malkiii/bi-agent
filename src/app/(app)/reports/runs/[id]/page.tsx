@@ -1,34 +1,42 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { NotFoundError } from '@/core';
+import { NotFoundError, reportPath } from '@/core';
 import { BlockView } from '@/web/chat/AnswerView';
 import chat from '@/web/chat/chat.module.css';
 import { Markdown } from '@/web/chat/Markdown';
 import { requireUser } from '@/web/current-user';
 import { formatInZone } from '@/web/reports/format';
 import styles from '@/web/reports/reports.module.css';
+import { PrintButton } from '@/web/reports/PrintButton';
 import { getCore } from '@/web/server-runtime';
 
 export const metadata = { title: 'Report Run · Botley' };
 export const dynamic = 'force-dynamic';
 
-/** A Report Run: frozen tables, charts and commentary from when it was generated. Any signed-in user may open it. */
+/**
+ * A Report Run: frozen tables, charts and commentary from when it was generated. Any signed-in
+ * user may open it, also after its Report was deleted. Prints to A4 (see the print CSS).
+ */
 export default async function ReportRunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requireUser();
-  const run = await (await getCore()).reports.getRun(user.slackUserId, id).catch((error: unknown) => {
-    if (error instanceof NotFoundError) return null;
-    throw error;
-  });
+  const reports = (await getCore()).reports;
+  const run = await reports.getRun(user.slackUserId, id).catch(orNull);
   if (!run) notFound();
+  const reportExists = (await reports.get(user.slackUserId, run.reportId).catch(orNull)) !== null;
 
   return (
-    <article className={chat.page}>
+    <article className={`${chat.page} ${styles.run}`}>
       <header className={chat.conversationHeader}>
         <h1>{run.title}</h1>
-        <Link href={`/reports/${run.reportId}`} className="btn btn--ghost">
-          Report
-        </Link>
+        <div className="actions no-print">
+          <PrintButton />
+          {reportExists && (
+            <Link href={reportPath(run.reportId)} className="btn btn--ghost">
+              Report
+            </Link>
+          )}
+        </div>
       </header>
       <p className={chat.muted}>
         Generated {formatInZone(run.finishedAt, run.timezone)} ({run.timezone}). The data is as of then.
@@ -61,4 +69,9 @@ export default async function ReportRunPage({ params }: { params: Promise<{ id: 
       </section>
     </article>
   );
+}
+
+function orNull(error: unknown): null {
+  if (error instanceof NotFoundError) return null;
+  throw error;
 }

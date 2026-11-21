@@ -153,3 +153,41 @@ pre {
   border: 2px solid var(--color-on-accent);
   border-radius: 4px;
 }
+
+/*
+ * Print (Report Run pages are printed to A4): light tokens whatever the theme, no shadows,
+ * thin borders. `:root:root:root` outranks both dark-theme selectors above.
+ */
+@page {
+  size: A4;
+  margin: 14mm 12mm;
+}
+
+@media print {
+  :root:root:root {
+    --color-bg: #ffffff;
+    --color-surface: #ffffff;
+    --color-ink: #111111;
+    --color-muted: #444444;
+    --color-border: #111111;
+    --color-shadow: transparent;
+    --border-width: 1px;
+    --shadow: none;
+    --shadow-sm: none;
+    color-scheme: light;
+  }
+
+  html,
+  body {
+    background: #ffffff;
+    font-size: 11pt;
+  }
+
+  a {
+    text-decoration: none;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}

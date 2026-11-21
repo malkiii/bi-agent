@@ -5,8 +5,8 @@ import { useBotley } from '@/web/botley/BotleyProvider';
 import { approveReportAction } from './actions';
 import styles from './reports.module.css';
 
-/** Approves a draft Report: pins its queries and layout and starts its schedule. */
-export function ApproveButton({ id }: { id: string }) {
+/** Approves a draft Report (or re-approves a failed one): pins its queries and layout and starts its schedule. */
+export function ApproveButton({ id, reapprove = false }: { id: string; reapprove?: boolean }) {
   const [state, approve, pending] = useActionState(approveReportAction, {});
   const { setBotleyState } = useBotley();
 
@@ -18,7 +18,7 @@ export function ApproveButton({ id }: { id: string }) {
     <form action={approve} className="actions">
       <input type="hidden" name="id" value={id} />
       <button type="submit" className="btn" disabled={pending}>
-        {pending ? 'Approving…' : 'Approve and schedule'}
+        {pending ? 'Approving…' : reapprove ? 'Re-approve and resume' : 'Approve and schedule'}
       </button>
       {state.error && (
         <p className={styles.error} role="alert">

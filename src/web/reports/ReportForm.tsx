@@ -1,11 +1,11 @@
 'use client';
 
 import { useActionState, useEffect, useState } from 'react';
-import type { SlackChannel } from '@/core';
+import type { ReportDestination, ReportSchedule, SlackChannel } from '@/core';
 import { MONTHLY_MAX_DAY, REPORT_TITLE_MAX, WEEKDAYS } from '@/core/reports/report-options';
 import { useBotley } from '@/web/botley/BotleyProvider';
 import formStyles from '@/web/components/DataSourceForm.module.css';
-import { createReportAction } from './actions';
+import { createReportAction, updateReportAction } from './actions';
 import styles from './reports.module.css';
 
 export interface SavedQuestionOption {
@@ -15,33 +15,51 @@ export interface SavedQuestionOption {
 
 type ScheduleKind = 'daily' | 'weekly' | 'monthly' | 'cron';
 
+/** The settings of an existing Report, to edit. Its queries and Prompt can't be changed here. */
+export interface EditableReport {
+  id: string;
+  title: string;
+  schedule: ReportSchedule;
+  timezone: string;
+  destination: ReportDestination;
+  /** Who gets a DM destination: the Report's creator, e.g. "You" or "Ada". */
+  dmRecipient: string;
+}
+
 /**
  * New Report: where its queries come from (a Prompt the agent answers now, or a Saved Question),
  * its schedule (preset or cron, in a timezone that defaults to the browser's) and destination.
+ * With `report`, edits that Report's title, schedule, timezone and destination instead.
  */
 export function ReportForm({
-  savedQuestions,
+  savedQuestions = [],
   channels,
   initialSavedQuestionId,
+  report,
 }: {
-  savedQuestions: SavedQuestionOption[];
+  savedQuestions?: SavedQuestionOption[];
   /** Null when Slack's channel list could not be loaded. */
   channels: SlackChannel[] | null;
   initialSavedQuestionId?: string;
+  report?: EditableReport;
 }) {
-  const [state, save, saving] = useActionState(createReportAction, {});
+  const [state, save, saving] = useActionState(report ? updateReportAction : createReportAction, {});
   const [source, setSource] = useState<'prompt' | 'savedQuestion'>(initialSavedQuestionId ? 'savedQuestion' : 'prompt');
-  const [scheduleKind, setScheduleKind] = useState<ScheduleKind>('weekly');
-  const [destinationKind, setDestinationKind] = useState<'channel' | 'dm'>('channel');
-  const [timezone, setTimezone] = useState('UTC');
+  const schedule = report?.schedule;
+  const [scheduleKind, setScheduleKind] = useState<ScheduleKind>(schedule?.kind ?? 'weekly');
+  const [destinationKind, setDestinationKind] = useState<'channel' | 'dm'>(report?.destination.kind ?? 'channel');
+  const [timezone, setTimezone] = useState(report?.timezone ?? 'UTC');
   const { setBotleyState } = useBotley();
   const errors = state.fieldErrors ?? {};
+  const editing = report !== undefined;
+  const initialChannel = report?.destination.kind === 'channel' ? report.destination.channel : '';
 
   useEffect(() => {
+    if (editing) return;
     const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the browser's timezone is only known after hydration
     if (detected) setTimezone(detected);
-  }, []);
+  }, [editing]);
 
   useEffect(() => {
     if (saving) setBotleyState('thinking');
@@ -50,51 +68,62 @@ export function ReportForm({
 
   return (
     <form action={save} className={formStyles.form}>
-      <fieldset className={styles.fieldset}>
-        <legend className={formStyles.label}>Queries from</legend>
-        <label className={styles.option}>
-          <input type="radio" name="queriesFrom" value="prompt" checked={source === 'prompt'} onChange={() => setSource('prompt')} /> A
-          new Prompt
-        </label>
-        <label className={styles.option}>
-          <input
-            type="radio"
-            name="queriesFrom"
-            value="savedQuestion"
-            checked={source === 'savedQuestion'}
-            onChange={() => setSource('savedQuestion')}
-            disabled={savedQuestions.length === 0}
-          />{' '}
-          A Saved Question
-        </label>
-      </fieldset>
+      {report && <input type="hidden" name="id" value={report.id} />}
+      {!editing && (
+        <>
+          <fieldset className={styles.fieldset}>
+            <legend className={formStyles.label}>Queries from</legend>
+            <label className={styles.option}>
+              <input type="radio" name="queriesFrom" value="prompt" checked={source === 'prompt'} onChange={() => setSource('prompt')} /> A
+              new Prompt
+            </label>
+            <label className={styles.option}>
+              <input
+                type="radio"
+                name="queriesFrom"
+                value="savedQuestion"
+                checked={source === 'savedQuestion'}
+                onChange={() => setSource('savedQuestion')}
+                disabled={savedQuestions.length === 0}
+              />{' '}
+              A Saved Question
+            </label>
+          </fieldset>
 
-      {source === 'prompt' ? (
-        <label className={formStyles.field}>
-          <span className={formStyles.label}>Prompt</span>
-          <textarea name="prompt" rows={3} required className={formStyles.input} placeholder="Weekly sales by region, with a chart" />
-          <span className={formStyles.help}>Botley answers it once. You check the Answer, then approve it to pin its queries.</span>
-          {errors.prompt && <span className={formStyles.error}>{errors.prompt}</span>}
-        </label>
-      ) : (
-        <label className={formStyles.field}>
-          <span className={formStyles.label}>Saved Question</span>
-          <select name="savedQuestionId" defaultValue={initialSavedQuestionId ?? ''} required className={formStyles.input}>
-            <option value="" disabled>
-              Choose a Saved Question…
-            </option>
-            {savedQuestions.map((q) => (
-              <option key={q.id} value={q.id}>
-                {q.title}
-              </option>
-            ))}
-          </select>
-        </label>
+          {source === 'prompt' ? (
+            <label className={formStyles.field}>
+              <span className={formStyles.label}>Prompt</span>
+              <textarea name="prompt" rows={3} required className={formStyles.input} placeholder="Weekly sales by region, with a chart" />
+              <span className={formStyles.help}>Botley answers it once. You check the Answer, then approve it to pin its queries.</span>
+              {errors.prompt && <span className={formStyles.error}>{errors.prompt}</span>}
+            </label>
+          ) : (
+            <label className={formStyles.field}>
+              <span className={formStyles.label}>Saved Question</span>
+              <select name="savedQuestionId" defaultValue={initialSavedQuestionId ?? ''} required className={formStyles.input}>
+                <option value="" disabled>
+                  Choose a Saved Question…
+                </option>
+                {savedQuestions.map((q) => (
+                  <option key={q.id} value={q.id}>
+                    {q.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </>
       )}
 
       <label className={formStyles.field}>
         <span className={formStyles.label}>Title</span>
-        <input name="title" className={formStyles.input} placeholder="Defaults to the Prompt" maxLength={REPORT_TITLE_MAX} />
+        <input
+          name="title"
+          defaultValue={report?.title}
+          className={formStyles.input}
+          placeholder="Defaults to the Prompt"
+          maxLength={REPORT_TITLE_MAX}
+        />
         {errors.title && <span className={formStyles.error}>{errors.title}</span>}
       </label>
 
@@ -114,7 +143,12 @@ export function ReportForm({
             <option value="cron">Cron expression</option>
           </select>
           {scheduleKind === 'weekly' && (
-            <select name="weekday" defaultValue="1" className={formStyles.input} aria-label="Day of the week">
+            <select
+              name="weekday"
+              defaultValue={schedule?.kind === 'weekly' ? schedule.weekday : 1}
+              className={formStyles.input}
+              aria-label="Day of the week"
+            >
               {WEEKDAYS.map((d, i) => (
                 <option key={d} value={i}>
                   on {d}
@@ -123,7 +157,12 @@ export function ReportForm({
             </select>
           )}
           {scheduleKind === 'monthly' && (
-            <select name="day" defaultValue="1" className={formStyles.input} aria-label="Day of the month">
+            <select
+              name="day"
+              defaultValue={schedule?.kind === 'monthly' ? schedule.day : 1}
+              className={formStyles.input}
+              aria-label="Day of the month"
+            >
               {Array.from({ length: MONTHLY_MAX_DAY }, (_, i) => (
                 <option key={i + 1} value={i + 1}>
                   on day {i + 1}
@@ -132,9 +171,23 @@ export function ReportForm({
             </select>
           )}
           {scheduleKind === 'cron' ? (
-            <input name="cron" required className={`${formStyles.input} ${styles.mono}`} placeholder="0 9 * * 1-5" aria-label="Cron expression" />
+            <input
+              name="cron"
+              defaultValue={schedule?.kind === 'cron' ? schedule.expression : undefined}
+              required
+              className={`${formStyles.input} ${styles.mono}`}
+              placeholder="0 9 * * 1-5"
+              aria-label="Cron expression"
+            />
           ) : (
-            <input name="time" type="time" defaultValue="09:00" required className={formStyles.input} aria-label="Time" />
+            <input
+              name="time"
+              type="time"
+              defaultValue={schedule && schedule.kind !== 'cron' ? schedule.time : '09:00'}
+              required
+              className={formStyles.input}
+              aria-label="Time"
+            />
           )}
         </div>
         {scheduleKind === 'cron' && (
@@ -178,12 +231,18 @@ export function ReportForm({
           A channel
         </label>
         <label className={styles.option}>
-          <input type="radio" name="destinationKind" value="dm" checked={destinationKind === 'dm'} onChange={() => setDestinationKind('dm')} />{' '}
-          Me, in a DM
+          <input
+            type="radio"
+            name="destinationKind"
+            value="dm"
+            checked={destinationKind === 'dm'}
+            onChange={() => setDestinationKind('dm')}
+          />{' '}
+          {report ? `${report.dmRecipient}, in a DM` : 'Me, in a DM'}
         </label>
         {destinationKind === 'channel' &&
           (channels ? (
-            <select name="channel" defaultValue="" required className={formStyles.input} aria-label="Channel">
+            <select name="channel" defaultValue={initialChannel} required className={formStyles.input} aria-label="Channel">
               <option value="" disabled>
                 Choose a channel…
               </option>
@@ -194,7 +253,15 @@ export function ReportForm({
               ))}
             </select>
           ) : (
-            <input name="channel" required placeholder="C0123ABCD" className={formStyles.input} aria-label="Channel id" spellCheck={false} />
+            <input
+              name="channel"
+              defaultValue={initialChannel}
+              required
+              placeholder="C0123ABCD"
+              className={formStyles.input}
+              aria-label="Channel id"
+              spellCheck={false}
+            />
           ))}
         {destinationKind === 'channel' && (
           <span className={formStyles.help}>
@@ -212,7 +279,7 @@ export function ReportForm({
 
       <div className={formStyles.actions}>
         <button type="submit" className="btn" disabled={saving}>
-          {saving ? (source === 'prompt' ? 'Botley is answering…' : 'Saving…') : 'Create Report'}
+          {saving ? (source === 'prompt' && !editing ? 'Botley is answering…' : 'Saving…') : editing ? 'Save changes' : 'Create Report'}
         </button>
       </div>
     </form>

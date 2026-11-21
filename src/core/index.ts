@@ -86,13 +86,15 @@ export type {
   SavedQuestions,
   SavedQuestionVisibility,
 } from './saved-questions/saved-questions';
-export { approvableAnswer, reportRunPath, REPORT_TITLE_MAX } from './reports/reports';
+export { approvableAnswer, reportPath, reportRunPath, REPORT_TITLE_MAX } from './reports/reports';
 export type {
   Report,
   ReportDestination,
   ReportDestinationInput,
+  ReportFailure,
   ReportOrigin,
   ReportRun,
+  ReportRunSummary,
   Reports,
   ReportSettingsInput,
   ReportStatus,

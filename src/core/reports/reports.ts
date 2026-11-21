@@ -30,8 +30,19 @@ export function approvableAnswer(messages: readonly ConversationMessage[]): Extr
   return latest?.kind === 'answer' ? latest : undefined;
 }
 
-/** `draft` until a person approves its queries; `active` runs on schedule. */
-export type ReportStatus = 'draft' | 'active';
+/**
+ * `draft` until a person approves its queries; `active` runs on schedule; `paused` keeps its
+ * Pinned Queries but doesn't run; `needsReapproval` after a failed Report Run, until someone
+ * approves its queries again.
+ */
+export type ReportStatus = 'draft' | 'active' | 'paused' | 'needsReapproval';
+
+/** The Report Run that put a Report into `needsReapproval`. */
+export interface ReportFailure {
+  runId: string;
+  error: string;
+  at: Date;
+}
 
 export type ReportDestination = { kind: 'channel'; channel: string } | { kind: 'dm'; slackUserId: string };
 
@@ -56,9 +67,11 @@ export interface Report {
   updatedAt: Date;
   approvedBy: string | null;
   approvedAt: Date | null;
-  /** When the next Report Run is due; null while a draft. */
+  /** When the next Report Run is due; null unless active. */
   nextRunAt: Date | null;
   lastRunAt: Date | null;
+  /** Set while `needsReapproval`. */
+  failure: ReportFailure | null;
 }
 
 /** One generated page of a Report, frozen when it was made. Outlives its Report. */
@@ -85,6 +98,9 @@ export interface ReportRun {
   /** Set when posting to Slack failed. */
   deliveryError?: string;
 }
+
+/** A past Report Run in a Report's list, without its data. */
+export type ReportRunSummary = Pick<ReportRun, 'id' | 'status' | 'error' | 'scheduledFor' | 'finishedAt' | 'timezone' | 'deliveryError'>;
 
 /** Destination as a form gives it: a channel id, or a DM to the person saving. */
 export type ReportDestinationInput = { kind: 'channel'; channel: string } | { kind: 'dm' };
@@ -115,9 +131,23 @@ export interface Reports {
   /**
    * Pins the queries (the latest complete Answer of the origin Conversation, or the Saved
    * Question's Pinned Queries), activates the Report and schedules its next run. The actor must
-   * be able to see the origin (NotFoundError); ValidationError when there is nothing to pin.
+   * be able to see the origin (NotFoundError); ValidationError when there is nothing to pin or the
+   * Report is neither a draft nor needs re-approval.
    */
   approve(actorSlackUserId: string, id: string): Promise<Report>;
+  /**
+   * Anyone: changes the title, schedule, timezone and destination, checked as when creating
+   * (ValidationError). A DM goes to the Report's creator. An active Report is rescheduled.
+   */
+  update(actorSlackUserId: string, id: string, input: ReportSettingsInput): Promise<Report>;
+  /** Anyone: stops an active Report from running, keeping its Pinned Queries (ValidationError unless active). */
+  pause(actorSlackUserId: string, id: string): Promise<Report>;
+  /** Anyone: schedules a paused Report again from now (ValidationError unless paused). */
+  resume(actorSlackUserId: string, id: string): Promise<Report>;
+  /** Admin only (ForbiddenError). Stops it running; its Report Runs are kept, so posted links still work. */
+  remove(actorSlackUserId: string, id: string): Promise<void>;
+  /** The Report's latest Report Runs (up to 100), newest first; also after the Report was deleted. */
+  listRuns(actorSlackUserId: string, reportId: string): Promise<ReportRunSummary[]>;
   /** Any Report Run, for any signed-in user. */
   getRun(actorSlackUserId: string, runId: string): Promise<ReportRun>;
   /** Channels the bot is in, to choose a destination from. Rejects when Slack can't list them. */
@@ -147,9 +177,14 @@ export const REPORT_JOB = 'report';
 /** Rows of each result the commentary model sees. */
 const COMMENTARY_ROWS = 50;
 const COMMENTARY_MAX_CHARS = 12_000;
+const RUNS_LISTED = 100;
 
 export function reportRunPath(runId: string): string {
   return `/reports/runs/${runId}`;
+}
+
+export function reportPath(reportId: string): string {
+  return `/reports/${reportId}`;
 }
 
 export function createReports(deps: Deps): Reports {
@@ -163,8 +198,18 @@ export function createReports(deps: Deps): Reports {
     return doc;
   }
 
-  /** Validates title, schedule, timezone and destination; the bot must be in a destination channel. */
-  async function settingsOf(actor: string, input: ReportSettingsInput, fallbackTitle: string) {
+  /** Applies `fields` if the Report is still in `status` (it may have changed since it was read). */
+  async function setIfStatus(id: string, status: ReportStatus, fields: Partial<ReportDoc>): Promise<Report> {
+    const updated = await reports.findOneAndUpdate({ _id: id, status }, { $set: fields }, { returnDocument: 'after' });
+    if (!updated) throw new ValidationError('The Report changed meanwhile. Reload and try again.');
+    return toReport(updated);
+  }
+
+  /**
+   * Validates title, schedule, timezone and destination; the bot must be in a destination channel.
+   * A DM goes to `dmTo`: the Report's creator.
+   */
+  async function settingsOf(dmTo: string, input: ReportSettingsInput, fallbackTitle: string) {
     const fieldErrors: Record<string, string> = {};
     let scheduled: ReturnType<typeof validateSchedule> | null = null;
     try {
@@ -175,7 +220,7 @@ export function createReports(deps: Deps): Reports {
     }
     let destination: ReportDestination | null = null;
     if (input.destination.kind === 'dm') {
-      destination = { kind: 'dm', slackUserId: actor };
+      destination = { kind: 'dm', slackUserId: dmTo };
     } else {
       const channel = input.destination.channel.trim();
       if (!channel) fieldErrors.destination = 'Choose a channel.';
@@ -206,6 +251,7 @@ export function createReports(deps: Deps): Reports {
       approvedAt: null,
       nextRunAt: null,
       lastRunAt: null,
+      failure: null,
     };
     await reports.insertOne(doc);
     return toReport(doc);
@@ -236,14 +282,22 @@ export function createReports(deps: Deps): Reports {
     }
   }
 
-  async function deliver(report: ReportDoc, run: ReportRunDoc): Promise<string | undefined> {
-    const url = deps.appUrl ? `${deps.appUrl.replace(/\/+$/, '')}${reportRunPath(run._id)}` : undefined;
-    const link = url ? `\n<${url}|Open the Report Run>` : '';
+  /** A Slack link on its own line to a page of the web app; empty without an app URL. */
+  function slackLink(path: string, label: string): string {
+    return deps.appUrl ? `\n<${deps.appUrl.replace(/\/+$/, '')}${path}|${label}>` : '';
+  }
+
+  /** Posts the run to the destination; `needsReapproval` when this failure stopped the Report. */
+  async function deliver(report: ReportDoc, run: ReportRunDoc, needsReapproval: boolean): Promise<string | undefined> {
+    const runLink = slackLink(reportRunPath(run._id), 'Open the Report Run');
     const title = toMrkdwn(report.title);
     const text =
       run.status === 'complete'
-        ? `*${title}*${run.commentary ? `\n${toMrkdwn(run.commentary)}` : ''}${link}`
-        : `:warning: *${title}* could not be completed: ${toMrkdwn(run.error ?? 'a Pinned Query failed.')}${link}`;
+        ? `*${title}*${run.commentary ? `\n${toMrkdwn(run.commentary)}` : ''}${runLink}`
+        : `:warning: *${title}* could not be completed: ${toMrkdwn(run.error ?? 'a Pinned Query failed.')}` +
+          (needsReapproval ? '\nIt is stopped and needs re-approval: fix its queries, then approve them again.' : '') +
+          runLink +
+          slackLink(reportPath(report._id), 'Open the Report');
     const channel = report.destination.kind === 'channel' ? report.destination.channel : report.destination.slackUserId;
     try {
       await slack.postMessage({ channel, text });
@@ -252,6 +306,10 @@ export function createReports(deps: Deps): Reports {
       deps.onError?.(error);
       return error instanceof Error ? error.message : 'Posting to Slack failed.';
     }
+  }
+
+  async function recordDelivery(run: ReportRunDoc, deliveryError: string | undefined) {
+    if (deliveryError) await runs.updateOne({ _id: run._id }, { $set: { deliveryError } });
   }
 
   /** The scheduler's handler: one Report Run, then when the next is due. */
@@ -277,11 +335,23 @@ export function createReports(deps: Deps): Reports {
       finishedAt: clock.now(),
     };
     await runs.insertOne(run);
-    const deliveryError = await deliver(report, run);
-    if (deliveryError) await runs.updateOne({ _id: run._id }, { $set: { deliveryError } });
 
-    const next = nextRunAt(report.schedule, report.timezone, clock.now());
-    await reports.updateOne({ _id: reportId }, { $set: { lastRunAt: run.finishedAt, nextRunAt: next } });
+    if (run.status === 'failed') {
+      // Paused, edited or deleted meanwhile: that change wins, and the notice doesn't claim otherwise.
+      const failure: ReportFailure = { runId: run._id, error: run.error ?? 'A Pinned Query failed.', at: run.finishedAt };
+      const { modifiedCount } = await reports.updateOne(
+        { _id: reportId, status: 'active' },
+        { $set: { status: 'needsReapproval', failure, lastRunAt: run.finishedAt, nextRunAt: null } },
+      );
+      await recordDelivery(run, await deliver(report, run, modifiedCount > 0));
+      return null;
+    }
+    await recordDelivery(run, await deliver(report, run, false));
+    // Re-read: the Report may have been paused, edited or deleted while it ran, and that change set its job.
+    const current = await reports.findOne({ _id: reportId, status: 'active' });
+    if (!current) return null;
+    const next = nextRunAt(current.schedule, current.timezone, clock.now());
+    await reports.updateOne({ _id: reportId, status: 'active' }, { $set: { lastRunAt: run.finishedAt, nextRunAt: next } });
     return next;
   }
 
@@ -317,17 +387,71 @@ export function createReports(deps: Deps): Reports {
 
     async approve(actor, id) {
       const doc = await load(id);
+      if (doc.status !== 'draft' && doc.status !== 'needsReapproval') {
+        throw new ValidationError('Only a draft, or a Report that needs re-approval, can be approved.');
+      }
       const pinned = await pinnedFromOrigin(actor, doc.origin);
       const now = clock.now();
       const next = nextRunAt(doc.schedule, doc.timezone, now);
       const updated = await reports.findOneAndUpdate(
-        { _id: id },
-        { $set: { status: 'active', pinned, approvedBy: actor, approvedAt: now, nextRunAt: next, updatedAt: now } },
+        { _id: id, status: doc.status },
+        { $set: { status: 'active', pinned, approvedBy: actor, approvedAt: now, nextRunAt: next, failure: null, updatedAt: now } },
         { returnDocument: 'after' },
       );
-      if (!updated) throw new NotFoundError('Report not found.');
+      if (!updated) throw new ValidationError('The Report changed meanwhile. Reload and try again.');
       await jobs.set(REPORT_JOB, id, next);
       return toReport(updated);
+    },
+
+    async update(_actor, id, input) {
+      const doc = await load(id);
+      const settings = await settingsOf(doc.createdBy, input, doc.title);
+      const now = clock.now();
+      const next = doc.status === 'active' ? nextRunAt(settings.schedule, settings.timezone, now) : null;
+      const updated = await setIfStatus(id, doc.status, { ...settings, nextRunAt: next, updatedAt: now });
+      if (doc.status === 'active') await jobs.set(REPORT_JOB, id, next);
+      return updated;
+    },
+
+    async pause(_actor, id) {
+      const doc = await load(id);
+      if (doc.status !== 'active') throw new ValidationError('Only an active Report can be paused.');
+      const updated = await setIfStatus(id, 'active', { status: 'paused', nextRunAt: null, updatedAt: clock.now() });
+      await jobs.set(REPORT_JOB, id, null);
+      return updated;
+    },
+
+    async resume(_actor, id) {
+      const doc = await load(id);
+      if (doc.status !== 'paused') throw new ValidationError('Only a paused Report can be resumed.');
+      const now = clock.now();
+      const next = nextRunAt(doc.schedule, doc.timezone, now);
+      const updated = await setIfStatus(id, 'paused', { status: 'active', nextRunAt: next, updatedAt: now });
+      await jobs.set(REPORT_JOB, id, next);
+      return updated;
+    },
+
+    async remove(actor, id) {
+      await users.requireAdmin(actor);
+      await reports.deleteOne({ _id: id });
+      await jobs.set(REPORT_JOB, id, null);
+    },
+
+    async listRuns(_actor, reportId) {
+      const docs = await runs
+        .find({ reportId }, { projection: { blocks: 0, sources: 0, queries: 0, commentary: 0, prompt: 0 } })
+        .sort({ startedAt: -1 })
+        .limit(RUNS_LISTED)
+        .toArray();
+      return docs.map(({ _id, status, error, scheduledFor, finishedAt, timezone, deliveryError }) => ({
+        id: _id,
+        status,
+        ...(error ? { error } : {}),
+        scheduledFor,
+        finishedAt,
+        timezone,
+        ...(deliveryError ? { deliveryError } : {}),
+      }));
     },
 
     async getRun(_actor, runId) {
@@ -377,7 +501,8 @@ function shorten(text: string): string {
 
 function toReport(doc: ReportDoc): Report {
   const { _id, ...rest } = doc;
-  return { id: _id, ...rest };
+  // Reports stored before failures were tracked have no `failure` field.
+  return { id: _id, ...rest, failure: rest.failure ?? null };
 }
 
 export async function ensureReportIndexes(db: Db) {

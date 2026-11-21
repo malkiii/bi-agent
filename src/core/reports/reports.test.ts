@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { createTestHarness, type TestHarness } from '@/core/testing';
-import { NotFoundError, ValidationError } from '@/core';
+import { ForbiddenError, NotFoundError, ValidationError } from '@/core';
 import { CONTRACT_FIXTURE_SQL, createPostgresTestDatabase, type PostgresTestDatabase } from '@/drivers/postgres/testing';
 
 const ADMIN = 'UADMIN';
@@ -295,5 +295,170 @@ describe('scheduled Report Runs', () => {
     await h.core.scheduler.runDue();
 
     expect(h.slack.messages).toMatchObject([{ channel: MEMBER }]);
+  });
+});
+
+describe('a failed Report Run', () => {
+  /** Approves a Report, renames the table its Pinned Query reads, and lets Monday's run fail. */
+  async function failOnce() {
+    const report = await h.core.reports.approve(MEMBER, (await draftFromPrompt()).id);
+    await pgDb.sql('ALTER TABLE orders RENAME TO orders_old');
+    h.clock.set(new Date('2026-01-12T08:00:00Z'));
+    await h.core.scheduler.runDue();
+    return report;
+  }
+
+  test('moves the Report to "needs re-approval", stops its schedule and says so in Slack', async () => {
+    const report = await failOnce();
+
+    const text = h.slack.messages[0]!.text;
+    expect(text).toContain('needs re-approval');
+    expect(text).toContain(`https://botley.example/reports/${report.id}|`);
+    expect(await h.core.reports.get(OTHER, report.id)).toMatchObject({
+      status: 'needsReapproval',
+      nextRunAt: null,
+      failure: { runId: runIdIn(text), error: expect.stringContaining('"totals" failed'), at: h.clock.now() },
+    });
+
+    h.clock.set(new Date('2026-02-01T00:00:00Z'));
+    expect(await h.core.scheduler.runDue()).toBe(0);
+    expect(h.slack.messages).toHaveLength(1);
+  });
+
+  test('re-approving after the fix resumes the schedule', async () => {
+    const report = await failOnce();
+    await pgDb.sql('ALTER TABLE orders_old RENAME TO orders');
+    h.clock.set(new Date('2026-01-13T10:00:00Z'));
+
+    const reapproved = await h.core.reports.approve(MEMBER, report.id);
+
+    expect(reapproved).toMatchObject({ status: 'active', failure: null, nextRunAt: new Date('2026-01-19T08:00:00Z') });
+    h.llm.script({ text: 'Back to normal.' });
+    h.clock.set(new Date('2026-01-19T08:00:00Z'));
+    expect(await h.core.scheduler.runDue()).toBe(1);
+    expect(await h.core.reports.getRun(MEMBER, runIdIn(h.slack.messages[1]!.text))).toMatchObject({ status: 'complete' });
+  });
+});
+
+describe('maintaining a Report', () => {
+  test('anyone can pause a Report, which then does not run, and resume it', async () => {
+    const report = await h.core.reports.approve(MEMBER, (await draftFromPrompt()).id);
+
+    expect(await h.core.reports.pause(OTHER, report.id)).toMatchObject({ status: 'paused', nextRunAt: null });
+    h.clock.set(new Date('2026-01-20T00:00:00Z'));
+    expect(await h.core.scheduler.runDue()).toBe(0);
+
+    const resumed = await h.core.reports.resume(OTHER, report.id);
+
+    expect(resumed).toMatchObject({ status: 'active', nextRunAt: new Date('2026-01-26T08:00:00Z'), pinned: report.pinned });
+    h.llm.script({ text: 'Fine.' });
+    h.clock.set(new Date('2026-01-26T08:00:00Z'));
+    expect(await h.core.scheduler.runDue()).toBe(1);
+  });
+
+  test('anyone can edit the title, schedule and destination; the next run follows the new schedule', async () => {
+    const report = await h.core.reports.approve(MEMBER, (await draftFromPrompt()).id);
+    h.slack.botChannels.add('COTHER');
+
+    const edited = await h.core.reports.update(OTHER, report.id, {
+      title: 'Daily sales',
+      schedule: { kind: 'daily', time: '18:00' },
+      timezone: 'UTC',
+      destination: { kind: 'channel', channel: 'COTHER' },
+    });
+
+    expect(edited).toMatchObject({
+      title: 'Daily sales',
+      prompt: 'Sales by region',
+      status: 'active',
+      schedule: { kind: 'daily', time: '18:00' },
+      timezone: 'UTC',
+      destination: { kind: 'channel', channel: 'COTHER' },
+      nextRunAt: new Date('2026-01-05T18:00:00Z'),
+      pinned: report.pinned,
+    });
+    h.llm.script({ text: 'Fine.' });
+    h.clock.set(new Date('2026-01-05T18:00:00Z'));
+    expect(await h.core.scheduler.runDue()).toBe(1);
+    expect(h.slack.messages).toMatchObject([{ channel: 'COTHER', text: expect.stringContaining('*Daily sales*') }]);
+  });
+
+  test('an edit is checked like a new Report, and a DM still goes to the creator', async () => {
+    const report = await h.core.reports.approve(MEMBER, (await draftFromPrompt()).id);
+
+    await expect(
+      h.core.reports.update(OTHER, report.id, { ...WEEKLY, destination: { kind: 'channel', channel: 'CELSEWHERE' } }),
+    ).rejects.toMatchObject({ fieldErrors: { destination: expect.stringContaining('/invite @Botley') } });
+
+    const edited = await h.core.reports.update(OTHER, report.id, { ...WEEKLY, destination: { kind: 'dm' } });
+    expect(edited).toMatchObject({ title: 'Sales by region', destination: { kind: 'dm', slackUserId: MEMBER } });
+  });
+
+  test('editing a paused Report keeps it paused', async () => {
+    const report = await h.core.reports.approve(MEMBER, (await draftFromPrompt()).id);
+    await h.core.reports.pause(MEMBER, report.id);
+
+    const edited = await h.core.reports.update(MEMBER, report.id, { ...WEEKLY, destination: { kind: 'channel', channel: CHANNEL } });
+
+    expect(edited).toMatchObject({ status: 'paused', nextRunAt: null });
+    h.clock.set(new Date('2026-02-01T00:00:00Z'));
+    expect(await h.core.scheduler.runDue()).toBe(0);
+  });
+
+  test('only an active Report can be paused, and only a paused one resumed', async () => {
+    const draft = await draftFromPrompt();
+
+    await expect(h.core.reports.pause(MEMBER, draft.id)).rejects.toThrow(ValidationError);
+    await expect(h.core.reports.resume(MEMBER, draft.id)).rejects.toThrow(ValidationError);
+  });
+
+  test('only a draft or a Report that needs re-approval can be approved', async () => {
+    const report = await h.core.reports.approve(MEMBER, (await draftFromPrompt()).id);
+
+    await expect(h.core.reports.approve(MEMBER, report.id)).rejects.toThrow(ValidationError);
+    await h.core.reports.pause(MEMBER, report.id);
+    await expect(h.core.reports.approve(MEMBER, report.id)).rejects.toThrow(ValidationError);
+  });
+});
+
+describe('past Report Runs and deleting', () => {
+  /** Approves a Report and lets it run on the next two Mondays. */
+  async function reportWithTwoRuns() {
+    const report = await h.core.reports.approve(MEMBER, (await draftFromPrompt()).id);
+    h.llm.script({ text: 'First.' }, { text: 'Second.' });
+    h.clock.set(new Date('2026-01-12T08:00:00Z'));
+    await h.core.scheduler.runDue();
+    h.clock.set(new Date('2026-01-19T08:00:00Z'));
+    await h.core.scheduler.runDue();
+    return { report, runIds: h.slack.messages.map((m) => runIdIn(m.text)) };
+  }
+
+  test('each Report lists its past Report Runs, newest first', async () => {
+    const { report, runIds } = await reportWithTwoRuns();
+    await draftFromPrompt(); // another Report's runs are not listed
+
+    expect(await h.core.reports.listRuns(OTHER, report.id)).toMatchObject([
+      { id: runIds[1], status: 'complete', scheduledFor: new Date('2026-01-19T08:00:00Z') },
+      { id: runIds[0], status: 'complete', scheduledFor: new Date('2026-01-12T08:00:00Z') },
+    ]);
+  });
+
+  test('members cannot delete a Report', async () => {
+    const report = await h.core.reports.approve(MEMBER, (await draftFromPrompt()).id);
+
+    await expect(h.core.reports.remove(MEMBER, report.id)).rejects.toThrow(ForbiddenError);
+    expect(await h.core.reports.get(MEMBER, report.id)).toMatchObject({ status: 'active' });
+  });
+
+  test('an admin deletes a Report: it stops running, and its Report Runs stay open', async () => {
+    const { report, runIds } = await reportWithTwoRuns();
+
+    await h.core.reports.remove(ADMIN, report.id);
+
+    await expect(h.core.reports.get(MEMBER, report.id)).rejects.toThrow(NotFoundError);
+    expect(await h.core.reports.list(MEMBER)).toEqual([]);
+    expect(await h.core.reports.getRun(MEMBER, runIds[0]!)).toMatchObject({ reportId: report.id, status: 'complete' });
+    h.clock.set(new Date('2026-03-01T00:00:00Z'));
+    expect(await h.core.scheduler.runDue()).toBe(0);
   });
 });

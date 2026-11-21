@@ -5,7 +5,7 @@ import chat from '@/web/chat/chat.module.css';
 import { requireUser } from '@/web/current-user';
 import styles from '@/web/reports/reports.module.css';
 import { getCore } from '@/web/server-runtime';
-import { formatInZone } from '@/web/reports/format';
+import { formatInZone, statusLabel } from '@/web/reports/format';
 
 export const metadata = { title: 'Reports · Botley' };
 export const dynamic = 'force-dynamic';
@@ -35,7 +35,7 @@ export default async function ReportsPage() {
                 <Link href={`/reports/${r.id}`}>
                   <strong>{r.title}</strong>
                 </Link>{' '}
-                <span className="tag">{r.status}</span>
+                <span className="tag">{statusLabel(r.status)}</span>
               </span>
               <span className={chat.muted}>
                 {describeSchedule(r.schedule)} ({r.timezone})

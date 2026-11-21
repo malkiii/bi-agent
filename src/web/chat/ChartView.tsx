@@ -48,7 +48,7 @@ export function ChartView({ block }: { block: ChartBlock }) {
   );
 }
 
-/** The chart palette for the current theme, read from the CSS tokens; updates when the theme changes. */
+/** The chart palette for the current theme, read from the CSS tokens; updates when the theme changes or printing starts. */
 function useChartPalette(): ChartPalette {
   const [palette, setPalette] = useState<ChartPalette>(LIGHT_CHART_PALETTE);
   useEffect(() => {
@@ -58,9 +58,13 @@ function useChartPalette(): ChartPalette {
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     media.addEventListener('change', read);
+    // Printing switches to the light tokens (globals.css), so charts redraw light for paper.
+    const print = window.matchMedia('print');
+    print.addEventListener('change', read);
     return () => {
       observer.disconnect();
       media.removeEventListener('change', read);
+      print.removeEventListener('change', read);
     };
   }, []);
   return palette;

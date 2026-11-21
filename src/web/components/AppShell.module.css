@@ -45,3 +45,15 @@
   margin: 0 auto;
   padding: var(--space-8) var(--space-6);
 }
+
+/* Printed pages carry no app chrome. */
+@media print {
+  .header {
+    display: none;
+  }
+
+  .main {
+    max-width: none;
+    padding: 0;
+  }
+}
