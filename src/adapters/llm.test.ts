@@ -1,11 +1,12 @@
-import { expect, test } from 'vitest';
+import { generateText } from 'ai';
+import { describe, expect, test } from 'vitest';
 import { createLanguageModelProvider } from './llm';
 import { LLM_PROVIDERS } from './llm-settings';
 
 test.each(LLM_PROVIDERS)('builds a %s model for the chosen model id, without calling it', async (provider) => {
   const llm = createLanguageModelProvider({
     defaultProvider: null,
-    credentials: { [provider]: provider === 'ollama' ? { baseUrl: 'http://ollama:11434/api' } : { apiKey: 'k' } },
+    credentials: { [provider]: { apiKey: 'k', baseUrl: 'http://server:1234/v1' } },
   });
 
   const model = await llm.getModel({ provider, model: 'some-model' });
@@ -42,4 +43,75 @@ test('lists models with the configured credentials', async () => {
 
   expect(await llm.listModels('openai')).toEqual([{ id: 'gpt-5', name: 'gpt-5' }]);
   expect(requests).toEqual([{ url: 'https://api.openai.com/v1/models', headers: { Authorization: 'Bearer sk-o' } }]);
+});
+
+describe('an OpenAI-compatible server', () => {
+  const chatCompletion = {
+    id: 'c1',
+    created: 0,
+    model: 'qwen3',
+    choices: [{ index: 0, message: { role: 'assistant', content: 'Hi' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 3, completion_tokens: 1 },
+  };
+
+  function recordingFetch(body: unknown) {
+    const requests: { url: string; headers: Record<string, string> }[] = [];
+    const fetchFn = (async (url: string | URL, init?: RequestInit) => {
+      requests.push({ url: String(url), headers: Object.fromEntries(new Headers(init?.headers).entries()) });
+      return Response.json(body);
+    }) as typeof fetch;
+    return { requests, fetchFn };
+  }
+
+  test('answers through Chat Completions at the configured base URL, with the key when set', async () => {
+    const { requests, fetchFn } = recordingFetch(chatCompletion);
+    const llm = createLanguageModelProvider(
+      { defaultProvider: null, credentials: { 'openai-compatible': { baseUrl: 'http://vllm:8000/v1/', apiKey: 'sk-v' } } },
+      fetchFn,
+    );
+
+    const { text } = await generateText({ model: await llm.getModel({ provider: 'openai-compatible', model: 'qwen3' }), prompt: 'Hello?' });
+
+    expect(text).toBe('Hi');
+    expect(requests).toMatchObject([{ url: 'http://vllm:8000/v1/chat/completions', headers: { authorization: 'Bearer sk-v' } }]);
+  });
+
+  test('answers without an Authorization header when no key is set', async () => {
+    const { requests, fetchFn } = recordingFetch(chatCompletion);
+    const llm = createLanguageModelProvider(
+      { defaultProvider: null, credentials: { 'openai-compatible': { baseUrl: 'http://lmstudio:1234/v1' } } },
+      fetchFn,
+    );
+
+    await generateText({ model: await llm.getModel({ provider: 'openai-compatible', model: 'qwen3' }), prompt: 'Hello?' });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.headers).not.toHaveProperty('authorization');
+  });
+
+  test('lists models from its /models endpoint, without a key when none is set', async () => {
+    const { requests, fetchFn } = recordingFetch({ data: [{ id: 'qwen3' }, { id: 'nomic-embed-text' }] });
+    const llm = createLanguageModelProvider(
+      { defaultProvider: null, credentials: { 'openai-compatible': { baseUrl: 'http://lmstudio:1234/v1/' } } },
+      fetchFn,
+    );
+
+    expect(await llm.listModels('openai-compatible')).toEqual([{ id: 'qwen3', name: 'qwen3' }]);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url).toBe('http://lmstudio:1234/v1/models');
+    expect(requests[0]?.headers).not.toHaveProperty('authorization');
+  });
+
+  test('is labelled with its configured name, other providers with theirs', () => {
+    const llm = createLanguageModelProvider({
+      defaultProvider: null,
+      credentials: { 'openai-compatible': { baseUrl: 'http://vllm:8000/v1' }, openai: { apiKey: 'o' } },
+      labels: { 'openai-compatible': 'vLLM' },
+    });
+    const unnamed = createLanguageModelProvider({ defaultProvider: null, credentials: { 'openai-compatible': { baseUrl: 'http://x/v1' } } });
+
+    expect(llm.providerLabel('openai-compatible')).toBe('vLLM');
+    expect(llm.providerLabel('openai')).toBe('OpenAI');
+    expect(unnamed.providerLabel('openai-compatible')).toBe('OpenAI-compatible');
+  });
 });

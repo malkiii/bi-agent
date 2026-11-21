@@ -61,12 +61,21 @@ const schema = z
     OPENROUTER_API_KEY: optional,
     GROQ_API_KEY: optional,
     OLLAMA_BASE_URL: optional,
+    OPENAI_COMPATIBLE_BASE_URL: optional.refine(
+      (v) => !v || isHttpUrl(v),
+      'OPENAI_COMPATIBLE_BASE_URL must be an http(s) URL, e.g. http://localhost:8000/v1',
+    ),
+    OPENAI_COMPATIBLE_API_KEY: optional,
+    OPENAI_COMPATIBLE_NAME: optional,
     SLACK_BOT_TOKEN: optional.refine((v) => !v || v.startsWith('xoxb-'), 'SLACK_BOT_TOKEN must be a bot token (xoxb-…)'),
     SLACK_APP_TOKEN: optional.refine((v) => !v || v.startsWith('xapp-'), 'SLACK_APP_TOKEN must be an app-level token (xapp-…)'),
     APP_URL: optional.refine((v) => !v || isHttpUrl(v), 'APP_URL must be an http(s) URL, e.g. https://botley.example.com'),
     AUTH_URL: optional,
   })
   .superRefine((e, ctx) => {
+    if (e.OPENAI_COMPATIBLE_API_KEY && !e.OPENAI_COMPATIBLE_BASE_URL) {
+      ctx.addIssue({ code: 'custom', message: 'OPENAI_COMPATIBLE_BASE_URL is required when OPENAI_COMPATIBLE_API_KEY is set' });
+    }
     if (!e.LLM_PROVIDER) return;
     const keyVar = LLM_CREDENTIAL_ENV[e.LLM_PROVIDER] as keyof typeof e;
     if (e.LLM_PROVIDER !== 'ollama' && !e[keyVar]) {
@@ -82,12 +91,20 @@ function llmConfig(e: Env): LlmConfig | null {
     const value = e[LLM_CREDENTIAL_ENV[provider] as keyof Env] as string | undefined;
     if (provider === 'ollama') {
       if (value || e.LLM_PROVIDER === 'ollama') credentials.ollama = { baseUrl: value ?? DEFAULT_OLLAMA_BASE_URL };
+    } else if (provider === 'openai-compatible') {
+      if (value) {
+        credentials[provider] = { baseUrl: value, ...(e.OPENAI_COMPATIBLE_API_KEY && { apiKey: e.OPENAI_COMPATIBLE_API_KEY }) };
+      }
     } else if (value) {
       credentials[provider] = { apiKey: value };
     }
   }
   if (Object.keys(credentials).length === 0) return null;
-  return { defaultProvider: e.LLM_PROVIDER ?? null, credentials };
+  return {
+    defaultProvider: e.LLM_PROVIDER ?? null,
+    credentials,
+    ...(e.OPENAI_COMPATIBLE_NAME && { labels: { 'openai-compatible': e.OPENAI_COMPATIBLE_NAME } }),
+  };
 }
 
 function isHttpUrl(text: string): boolean {

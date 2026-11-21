@@ -5,17 +5,6 @@ import type { LlmChoice, LlmModel } from '@/core';
 import { listLlmModels, saveLlmSettings, type ModelListResult } from './actions';
 import styles from '@/web/components/DataSourceForm.module.css';
 
-const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  google: 'Google',
-  openrouter: 'OpenRouter',
-  groq: 'Groq',
-  ollama: 'Ollama',
-};
-
-export const providerLabel = (provider: string) => PROVIDER_LABELS[provider] ?? provider;
-
 /** The select's value for "type the id by hand". */
 const CUSTOM = '\u0000custom';
 
@@ -34,11 +23,14 @@ const unlisted = (list: ModelList, model: string) => list.status === 'ok' && !!m
  */
 export function LlmForm({
   providers,
+  labels,
   active,
   initialProvider,
   initialModels,
 }: {
   providers: readonly string[];
+  /** Display name per provider. */
+  labels: Record<string, string>;
   active: LlmChoice | null;
   initialProvider: string;
   initialModels: ModelListResult;
@@ -91,7 +83,7 @@ export function LlmForm({
           <select name="provider" value={provider} onChange={(e) => chooseProvider(e.target.value)} className={styles.input}>
             {providers.map((p) => (
               <option key={p} value={p}>
-                {providerLabel(p)}
+                {labels[p] ?? p}
               </option>
             ))}
           </select>

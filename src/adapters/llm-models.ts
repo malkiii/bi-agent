@@ -122,5 +122,9 @@ export async function listProviderModels(
       return openRouterModels((await getJson(fetchFn, 'https://openrouter.ai/api/v1/models', bearer)) as OpenRouterModels);
     case 'ollama':
       return ollamaModels((await getJson(fetchFn, `${baseUrl.replace(/\/+$/, '')}/tags`)) as OllamaTags);
+    case 'openai-compatible':
+      return openAiStyleModels(
+        (await getJson(fetchFn, `${baseUrl.replace(/\/+$/, '')}/models`, apiKey ? bearer : {})) as IdList,
+      );
   }
 }

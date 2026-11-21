@@ -10,6 +10,8 @@ export interface LlmSettingsView {
   active: LlmChoice | null;
   /** Providers with configured credentials; the only ones an admin may choose. */
   providers: readonly string[];
+  /** Each offered provider's display name. */
+  labels: Record<string, string>;
   /** The provider to pre-select when nothing is chosen yet (LLM_PROVIDER); null when unset. */
   defaultProvider: string | null;
 }
@@ -95,6 +97,7 @@ export function createLlmSettings({
     return {
       active: await resolve(),
       providers,
+      labels: Object.fromEntries(providers.map((p) => [p, llm.providerLabel(p)])),
       defaultProvider: defaultProvider && providers.includes(defaultProvider) ? defaultProvider : null,
     };
   }
@@ -115,7 +118,7 @@ export function createLlmSettings({
         try {
           models = await llm.listModels(provider);
         } catch (error) {
-          throw new ModelListError(provider, error);
+          throw new ModelListError(llm.providerLabel(provider), error);
         }
         return [...models].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
       },

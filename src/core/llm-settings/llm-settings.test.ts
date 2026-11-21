@@ -58,8 +58,15 @@ describe('choosing the LLM in admin settings', () => {
     expect(await h.core.llmSettings.get(ADMIN)).toEqual({
       active: null,
       providers: ['anthropic', 'openai'],
+      labels: { anthropic: 'anthropic', openai: 'openai' },
       defaultProvider: 'anthropic',
     });
+  });
+
+  test('admins see each provider by its display name, e.g. the configured name of an OpenAI-compatible server', async () => {
+    h.llm.configure({ providers: ['openai', 'openai-compatible'], labels: { openai: 'OpenAI', 'openai-compatible': 'vLLM' } });
+
+    expect((await h.core.llmSettings.get(ADMIN)).labels).toEqual({ openai: 'OpenAI', 'openai-compatible': 'vLLM' });
   });
 
   test('a pre-selected provider without a key is not offered', async () => {
@@ -74,6 +81,7 @@ describe('choosing the LLM in admin settings', () => {
     expect(view).toEqual({
       active: { provider: 'openai', model: 'gpt-chosen' },
       providers: ['anthropic', 'openai'],
+      labels: { anthropic: 'anthropic', openai: 'openai' },
       defaultProvider: 'anthropic',
     });
   });
@@ -138,12 +146,16 @@ describe('listing a provider’s models', () => {
     await expect(h.core.llmSettings.listModels(ADMIN, 'groq')).rejects.toBeInstanceOf(ValidationError);
   });
 
-  test('when the provider cannot be reached, a readable error says why', async () => {
-    h.llm.configure({ providers: ['openai'], models: { openai: new Error('the provider answered 401 (check the API key)') } });
+  test('when the provider cannot be reached, a readable error names it and says why', async () => {
+    h.llm.configure({
+      providers: ['openai'],
+      labels: { openai: 'OpenAI' },
+      models: { openai: new Error('the provider answered 401 (check the API key)') },
+    });
 
     const error = await h.core.llmSettings.listModels(ADMIN, 'openai').catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ModelListError);
-    expect((error as Error).message).toMatch(/openai.*401/);
+    expect((error as Error).message).toMatch(/from OpenAI: .*401/);
   });
 });

@@ -22,6 +22,7 @@ export const unconfiguredSlack: SlackGateway = {
 export const unconfiguredLlm: LanguageModelProvider = {
   configuredProviders: () => [],
   defaultProvider: () => null,
+  providerLabel: (provider) => provider,
   listModels: async () => notYet('LanguageModelProvider'),
   getModel: async () => notYet('LanguageModelProvider'),
 };

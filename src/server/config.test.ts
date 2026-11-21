@@ -55,6 +55,32 @@ describe('server config from environment', () => {
       });
     });
 
+    test('an OpenAI-compatible server is offered once its base URL is set, with an optional key and name', () => {
+      const bare = parseServerConfig({ ...minimal, OPENAI_COMPATIBLE_BASE_URL: 'http://vllm:8000/v1' });
+      const full = parseServerConfig({
+        ...minimal,
+        LLM_PROVIDER: 'openai-compatible',
+        OPENAI_COMPATIBLE_BASE_URL: 'https://api.deepseek.com/v1',
+        OPENAI_COMPATIBLE_API_KEY: 'sk-d',
+        OPENAI_COMPATIBLE_NAME: 'DeepSeek',
+      });
+
+      expect(bare.llm).toEqual({ defaultProvider: null, credentials: { 'openai-compatible': { baseUrl: 'http://vllm:8000/v1' } } });
+      expect(full.llm).toEqual({
+        defaultProvider: 'openai-compatible',
+        credentials: { 'openai-compatible': { baseUrl: 'https://api.deepseek.com/v1', apiKey: 'sk-d' } },
+        labels: { 'openai-compatible': 'DeepSeek' },
+      });
+    });
+
+    test('an OpenAI-compatible server needs an http(s) base URL', () => {
+      expect(() => parseServerConfig({ ...minimal, LLM_PROVIDER: 'openai-compatible' })).toThrow(/OPENAI_COMPATIBLE_BASE_URL/);
+      expect(() => parseServerConfig({ ...minimal, OPENAI_COMPATIBLE_BASE_URL: 'vllm:8000' })).toThrow(
+        /OPENAI_COMPATIBLE_BASE_URL must be an http\(s\) URL/,
+      );
+      expect(() => parseServerConfig({ ...minimal, OPENAI_COMPATIBLE_API_KEY: 'k' })).toThrow(/OPENAI_COMPATIBLE_BASE_URL/);
+    });
+
     test('refuses an unknown provider or a missing key', () => {
       expect(() => parseServerConfig({ ...minimal, LLM_PROVIDER: 'skynet' })).toThrow(/LLM_PROVIDER/);
       expect(() => parseServerConfig({ ...minimal, LLM_PROVIDER: 'anthropic' })).toThrow(/ANTHROPIC_API_KEY/);

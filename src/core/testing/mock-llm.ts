@@ -29,24 +29,29 @@ export class MockLlm implements LanguageModelProvider {
   readonly choices: LlmChoice[] = [];
   private providers: readonly string[] = ['mock'];
   private preselected: string | null = null;
+  private labels: Record<string, string> = {};
   private models: Record<string, LlmModel[] | Error> = {};
 
   /**
    * Pretend these providers have configured credentials, LLM_PROVIDER is `defaultProvider`,
-   * and each provider offers `models` (an Error makes listing fail).
+   * each provider offers `models` (an Error makes listing fail), and is named by `labels`
+   * (else by its id).
    */
   configure({
     providers,
     defaultProvider = null,
     models = {},
+    labels = {},
   }: {
     providers: readonly string[];
     defaultProvider?: string | null;
     models?: Record<string, LlmModel[] | Error>;
+    labels?: Record<string, string>;
   }): void {
     this.providers = providers;
     this.preselected = defaultProvider;
     this.models = models;
+    this.labels = labels;
   }
 
   configuredProviders() {
@@ -55,6 +60,10 @@ export class MockLlm implements LanguageModelProvider {
 
   defaultProvider() {
     return this.preselected;
+  }
+
+  providerLabel(provider: string) {
+    return this.labels[provider] ?? provider;
   }
 
   async listModels(provider: string) {

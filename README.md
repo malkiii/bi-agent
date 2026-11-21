@@ -51,9 +51,10 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 | `MONGO_DB` | web, worker | Database name. Default `botley`. |
 | `WEB_PORT` | compose | Host port for plain-http `web`. Default 3000. |
 | `SITE_ADDRESS` | compose (caddy) | Hostname for the `https` profile. |
-| `LLM_PROVIDER` | web, worker | Optional: the provider Admin > Settings pre-selects (`anthropic`, `openai`, `google`, `openrouter`, `groq` or `ollama`). Admins choose the provider and model there, from the chat models the provider lists (or a typed model id). Until an admin chooses, Answers fail with a friendly message. |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY` | web, worker | Provider keys. The key for `LLM_PROVIDER` is required. Admin > Settings offers exactly the providers with a key here (Ollama: when `OLLAMA_BASE_URL` is set or it is `LLM_PROVIDER`). |
+| `LLM_PROVIDER` | web, worker | Optional: the provider Admin > Settings pre-selects (`anthropic`, `openai`, `google`, `openrouter`, `groq`, `ollama` or `openai-compatible`). Admins choose the provider and model there, from the chat models the provider lists (or a typed model id). Until an admin chooses, Answers fail with a friendly message. |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY` | web, worker | Provider keys. The key for `LLM_PROVIDER` is required. Admin > Settings offers exactly the providers with a key here (Ollama: when `OLLAMA_BASE_URL` is set or it is `LLM_PROVIDER`; OpenAI-compatible: when `OPENAI_COMPATIBLE_BASE_URL` is set). |
 | `OLLAMA_BASE_URL` | web, worker | Ollama API URL ending in `/api`. Default `http://localhost:11434/api` (from compose: `http://host.docker.internal:11434/api`). |
+| `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_COMPATIBLE_NAME` | web, worker | Any server speaking the OpenAI Chat Completions API (vLLM, LM Studio, llama.cpp, LiteLLM, DeepSeek, Together, ...). The base URL (usually ending in `/v1`) makes it available; the key is optional; the name labels it in Admin > Settings (default "OpenAI-compatible"). If the server doesn't list its models at `/models`, admins type the model id. |
 
 Process config is parsed and validated in `src/server/config.ts`. Add new variables there and to `.env.example`.
 
@@ -99,7 +100,7 @@ src/
     home/          The dashboard home's overview: recent Conversations, upcoming Report Runs, firing KPI Alerts, KPI tiles
     audit/         The audit log: AuditRecorder (modules write) and AuditLog (admins read, filter)
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
-  adapters/        Production implementations of ports (system clock, llm.ts = the six LLM providers, ...)
+  adapters/        Production implementations of ports (system clock, llm.ts = the LLM providers, ...)
   drivers/         Data Source drivers. index.ts = builtInDrivers registry
     contract/      describeDriverContract(): the shared suite every driver runs
     sql/           read-only-guard.ts: single SELECT/WITH check shared by SQL drivers; exact-number.ts

@@ -1,7 +1,7 @@
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 import { listLlmModels } from './actions';
-import { LlmForm, providerLabel } from './LlmForm';
+import { LlmForm } from './LlmForm';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,11 +24,11 @@ export default async function SettingsPage() {
         <>
           <p>
             {llm.active
-              ? `New Prompts use ${providerLabel(llm.active.provider)} ${llm.active.model}.`
+              ? `New Prompts use ${llm.labels[llm.active.provider] ?? llm.active.provider} ${llm.active.model}.`
               : 'No model is chosen yet, so Prompts fail until you choose one.'}{' '}
-            Providers appear here once their API key is in <code>.env</code>.
+            Providers appear here once their API key (or server URL) is in <code>.env</code>.
           </p>
-          <LlmForm providers={llm.providers} active={llm.active} initialProvider={initialProvider} initialModels={initialModels} />
+          <LlmForm providers={llm.providers} labels={llm.labels} active={llm.active} initialProvider={initialProvider} initialModels={initialModels} />
         </>
       )}
     </section>
