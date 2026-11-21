@@ -19,6 +19,7 @@ export function AppShell({ user, theme, children }: { user: User; theme: ThemePr
           <Link href="/chat">Chat</Link>
           <Link href="/history">History</Link>
           <Link href="/questions">Saved Questions</Link>
+          <Link href="/reports">Reports</Link>
           <Link href="/catalog">Catalog</Link>
           <Link href="/uploads">Uploads</Link>
           {user.role === 'admin' && <Link href="/admin">Admin</Link>}

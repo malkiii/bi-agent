@@ -53,6 +53,11 @@ export default async function SavedQuestionPage({ params }: { params: Promise<{ 
           </form>
         </div>
       )}
+      <p>
+        <Link href={`/reports/new?savedQuestion=${question.id}`} className="btn btn--cyan">
+          Turn into a Report
+        </Link>
+      </p>
       <RunView id={question.id} />
       <details>
         <summary>Pinned Queries ({question.pinned.queries.length})</summary>

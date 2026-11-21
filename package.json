@@ -30,6 +30,7 @@
     "@slack/bolt": "^5.1.0",
     "@slack/web-api": "^8.5.0",
     "ai": "^7.0.177",
+    "croner": "^10.0.1",
     "exceljs": "^4.4.0",
     "mongodb": "^7.9.1",
     "mssql": "^12.8.0",

@@ -21,6 +21,8 @@ import { createPinnedQueries, type PinnedQueries } from './pinned-queries/pinned
 import { createLlmSettings, type LlmSettings } from './llm-settings/llm-settings';
 import { createSavedQuestions, ensureSavedQuestionIndexes, type SavedQuestions } from './saved-questions/saved-questions';
 import { createChannelDefaults, type ChannelDefaults } from './channel-defaults/channel-defaults';
+import { createReports, ensureReportIndexes, type Reports } from './reports/reports';
+import { createScheduler, ensureJobIndexes, type Scheduler } from './scheduler/scheduler';
 
 export * from './errors';
 export type * from './ports';
@@ -84,6 +86,19 @@ export type {
   SavedQuestions,
   SavedQuestionVisibility,
 } from './saved-questions/saved-questions';
+export { approvableAnswer, reportRunPath, REPORT_TITLE_MAX } from './reports/reports';
+export type {
+  Report,
+  ReportDestination,
+  ReportDestinationInput,
+  ReportOrigin,
+  ReportRun,
+  Reports,
+  ReportSettingsInput,
+  ReportStatus,
+} from './reports/reports';
+export { describeSchedule, MONTHLY_MAX_DAY, WEEKDAYS, type ReportSchedule } from './reports/schedule';
+export type { Scheduler } from './scheduler/scheduler';
 
 export interface AppCoreConfig {
   /** Only this Slack workspace may sign in. */
@@ -92,7 +107,7 @@ export interface AppCoreConfig {
   adminSlackUserIds: readonly string[];
   /** 32-byte AES-256-GCM key (base64 or hex) sealing Data Source credentials. */
   encryptionKey: string;
-  /** The web app's public URL; Slack Answers link to it ("Open in dashboard"). No link when unset. */
+  /** The web app's public URL; Slack Answers ("Open in dashboard") and Report Runs link to it. No link when unset. */
   appUrl?: string;
 }
 
@@ -124,6 +139,10 @@ export interface AppCore {
   slackBot: SlackBot;
   pinnedQueries: PinnedQueries;
   savedQuestions: SavedQuestions;
+  /** Scheduled Prompts whose runs re-execute Pinned Queries; Report Runs are their frozen pages. */
+  reports: Reports;
+  /** Runs due scheduled work (Report Runs); the worker calls `runDue()` on a timer. */
+  scheduler: Scheduler;
   uploads: Uploads;
 }
 
@@ -143,6 +162,21 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     combiner: deps.combiner,
   });
   const pinnedQueries = createPinnedQueries({ dataSources, clock: deps.clock, combiner: deps.combiner });
+  const savedQuestions = createSavedQuestions({ db: deps.db, clock: deps.clock, users, conversations, pinnedQueries });
+  const { scheduler, jobs } = createScheduler({ db: deps.db, clock: deps.clock, onError: deps.onAgentError });
+  const reports = createReports({
+    db: deps.db,
+    clock: deps.clock,
+    users,
+    slack: deps.slack,
+    llm: llmSettings.active,
+    conversations,
+    savedQuestions,
+    pinnedQueries,
+    jobs,
+    appUrl: deps.config.appUrl,
+    onError: deps.onAgentError,
+  });
   return {
     users,
     preferences: createPreferences(deps),
@@ -159,7 +193,9 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
       onError: deps.onAgentError,
     }),
     pinnedQueries,
-    savedQuestions: createSavedQuestions({ db: deps.db, clock: deps.clock, users, conversations, pinnedQueries }),
+    savedQuestions,
+    reports,
+    scheduler,
     uploads: createUploads({
       db: deps.db,
       clock: deps.clock,
@@ -179,5 +215,7 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensureConversationIndexes(db);
   await ensureSlackBotIndexes(db);
   await ensureSavedQuestionIndexes(db);
+  await ensureReportIndexes(db);
+  await ensureJobIndexes(db);
   await ensureUploadIndexes(db);
 }
