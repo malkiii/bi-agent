@@ -1,5 +1,6 @@
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
+import { listLlmModels } from './actions';
 import { LlmForm, providerLabel } from './LlmForm';
 
 export const dynamic = 'force-dynamic';
@@ -8,6 +9,8 @@ export const dynamic = 'force-dynamic';
 export default async function SettingsPage() {
   const me = await requireUser();
   const llm = await (await getCore()).llmSettings.get(me.slackUserId);
+  const initialProvider = llm.active?.provider ?? llm.defaultProvider ?? llm.providers[0] ?? '';
+  const initialModels = initialProvider ? await listLlmModels(initialProvider) : { models: [] };
   return (
     <section className="card">
       <h1>Settings</h1>
@@ -21,11 +24,11 @@ export default async function SettingsPage() {
         <>
           <p>
             {llm.active
-              ? `New Prompts use ${providerLabel(llm.active.provider)} ${llm.active.model}${llm.source === 'environment' ? ' (the default from .env)' : ''}.`
+              ? `New Prompts use ${providerLabel(llm.active.provider)} ${llm.active.model}.`
               : 'No model is chosen yet, so Prompts fail until you choose one.'}{' '}
             Providers appear here once their API key is in <code>.env</code>.
           </p>
-          <LlmForm providers={llm.providers} active={llm.active} />
+          <LlmForm providers={llm.providers} active={llm.active} initialProvider={initialProvider} initialModels={initialModels} />
         </>
       )}
     </section>

@@ -31,7 +31,7 @@ export * from './errors';
 export type * from './ports';
 export type { Role, SlackIdentity, User } from './users/users';
 export type { ThemePreference } from './preferences/preferences';
-export { MAX_MODEL_LENGTH, type LlmSettings, type LlmSettingsView } from './llm-settings/llm-settings';
+export { MAX_MODEL_LENGTH, ModelListError, type LlmSettings, type LlmSettingsView } from './llm-settings/llm-settings';
 export { hasExposedDatasets } from './data-sources/data-sources';
 export type {
   CatalogColumn,

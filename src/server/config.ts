@@ -22,7 +22,7 @@ export interface ServerConfig {
   /** Shared volume for uploaded Datasets (ADR 0003); `web` and `worker` must see the same directory. */
   uploadsDir: string;
   core: AppCoreConfig;
-  /** LLM credentials and the default provider and model; null when no provider is configured (Answers then fail). */
+  /** LLM credentials and the pre-selected provider; null when no provider is configured (Answers then fail). */
   llm: LlmConfig | null;
   /** Slack bot (worker Socket Mode, outbound messages); absent when SLACK_BOT_TOKEN is unset. */
   slack?: SlackSettings;
@@ -55,7 +55,6 @@ const schema = z
     LLM_PROVIDER: optional.pipe(
       z.enum(LLM_PROVIDERS, { error: `LLM_PROVIDER must be one of ${LLM_PROVIDERS.join(', ')}` }).optional(),
     ),
-    LLM_MODEL: optional,
     ANTHROPIC_API_KEY: optional,
     OPENAI_API_KEY: optional,
     GOOGLE_GENERATIVE_AI_API_KEY: optional,
@@ -69,7 +68,6 @@ const schema = z
   })
   .superRefine((e, ctx) => {
     if (!e.LLM_PROVIDER) return;
-    if (!e.LLM_MODEL) ctx.addIssue({ code: 'custom', message: 'LLM_MODEL is required when LLM_PROVIDER is set' });
     const keyVar = LLM_CREDENTIAL_ENV[e.LLM_PROVIDER] as keyof typeof e;
     if (e.LLM_PROVIDER !== 'ollama' && !e[keyVar]) {
       ctx.addIssue({ code: 'custom', message: `${keyVar} is required when LLM_PROVIDER=${e.LLM_PROVIDER}` });
@@ -89,8 +87,7 @@ function llmConfig(e: Env): LlmConfig | null {
     }
   }
   if (Object.keys(credentials).length === 0) return null;
-  const defaultChoice = e.LLM_PROVIDER && e.LLM_MODEL ? { provider: e.LLM_PROVIDER, model: e.LLM_MODEL } : null;
-  return { defaultChoice, credentials };
+  return { defaultProvider: e.LLM_PROVIDER ?? null, credentials };
 }
 
 function isHttpUrl(text: string): boolean {

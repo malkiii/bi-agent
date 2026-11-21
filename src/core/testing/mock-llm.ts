@@ -1,6 +1,6 @@
 import { simulateReadableStream } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
-import type { LanguageModelProvider, LlmChoice } from '../ports';
+import type { LanguageModelProvider, LlmChoice, LlmModel } from '../ports';
 
 type GenerateResult = Awaited<ReturnType<MockLanguageModelV4['doGenerate']>>;
 type StreamResult = Awaited<ReturnType<MockLanguageModelV4['doStream']>>;
@@ -28,20 +28,40 @@ export class MockLlm implements LanguageModelProvider {
   /** Every provider/model a model was built for, in order. */
   readonly choices: LlmChoice[] = [];
   private providers: readonly string[] = ['mock'];
-  private defaultLlm: LlmChoice | null = { provider: 'mock', model: 'mock-model' };
+  private preselected: string | null = null;
+  private models: Record<string, LlmModel[] | Error> = {};
 
-  /** Pretend these providers have configured credentials, with this environment default. */
-  configure({ providers, defaultChoice }: { providers: readonly string[]; defaultChoice: LlmChoice | null }): void {
+  /**
+   * Pretend these providers have configured credentials, LLM_PROVIDER is `defaultProvider`,
+   * and each provider offers `models` (an Error makes listing fail).
+   */
+  configure({
+    providers,
+    defaultProvider = null,
+    models = {},
+  }: {
+    providers: readonly string[];
+    defaultProvider?: string | null;
+    models?: Record<string, LlmModel[] | Error>;
+  }): void {
     this.providers = providers;
-    this.defaultLlm = defaultChoice;
+    this.preselected = defaultProvider;
+    this.models = models;
   }
 
   configuredProviders() {
     return this.providers;
   }
 
-  defaultChoice() {
-    return this.defaultLlm;
+  defaultProvider() {
+    return this.preselected;
+  }
+
+  async listModels(provider: string) {
+    if (!this.providers.includes(provider)) throw new Error(`MockLlm: ${provider} is not configured`);
+    const models = this.models[provider] ?? [];
+    if (models instanceof Error) throw models;
+    return models;
   }
 
   /** Records `choice` and returns the scripted model, whatever provider was chosen. */

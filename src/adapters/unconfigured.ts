@@ -21,6 +21,7 @@ export const unconfiguredSlack: SlackGateway = {
 /** No LLM credentials in the environment: nothing to choose, and Answers fail. */
 export const unconfiguredLlm: LanguageModelProvider = {
   configuredProviders: () => [],
-  defaultChoice: () => null,
+  defaultProvider: () => null,
+  listModels: async () => notYet('LanguageModelProvider'),
   getModel: async () => notYet('LanguageModelProvider'),
 };

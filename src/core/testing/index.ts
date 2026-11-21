@@ -77,6 +77,10 @@ export async function createTestHarness(options: TestHarnessOptions = {}): Promi
     uploadStorage: uploads.storage,
     combiner: createDuckDbResultCombiner(),
   });
+  // As if an admin had chosen the mock model, so Prompts get answered; tests about choosing delete it.
+  await db
+    .collection<{ _id: string; [field: string]: unknown }>('appSettings')
+    .insertOne({ _id: 'llm', provider: 'mock', model: 'mock-model', updatedBy: 'test', updatedAt: clock.now() });
 
   return {
     core,

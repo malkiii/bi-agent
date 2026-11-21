@@ -15,6 +15,13 @@ export interface LlmChoice {
   model: string;
 }
 
+/** A chat model a provider offers. */
+export interface LlmModel {
+  id: string;
+  /** Display name; the id when the provider gives none. */
+  name: string;
+}
+
 /**
  * Builds Vercel AI SDK models for the providers whose credentials are configured (in `.env`).
  * Which provider and model are active is an admin setting the App Core keeps.
@@ -22,8 +29,10 @@ export interface LlmChoice {
 export interface LanguageModelProvider {
   /** Providers with configured credentials, in display order. */
   configuredProviders(): readonly string[];
-  /** The environment's default (LLM_PROVIDER, LLM_MODEL), used until an admin chooses; null when unset. */
-  defaultChoice(): LlmChoice | null;
+  /** The provider admin settings pre-select (LLM_PROVIDER); null when unset. */
+  defaultProvider(): string | null;
+  /** Asks the provider which chat models it offers. Throws when the provider is not configured or the request fails. */
+  listModels(provider: string): Promise<LlmModel[]>;
   /** Builds the model. Throws when `choice.provider` is not configured. */
   getModel(choice: LlmChoice): Promise<LanguageModel>;
 }
