@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AppCoreConfig } from '@/core';
 import { parseEncryptionKey } from '@/core/secret-box';
-import { LLM_CREDENTIAL_ENV, LLM_PROVIDERS, type LlmCredentials, type LlmProviderName, type LlmSettings } from '@/adapters/llm-settings';
+import { LLM_CREDENTIAL_ENV, LLM_PROVIDERS, type LlmCredentials, type LlmConfig, type LlmProviderName } from '@/adapters/llm-settings';
 
 const isEncryptionKey = (text: string) => {
   try {
@@ -22,8 +22,8 @@ export interface ServerConfig {
   /** Shared volume for uploaded Datasets (ADR 0003); `web` and `worker` must see the same directory. */
   uploadsDir: string;
   core: AppCoreConfig;
-  /** The default LLM provider and model; null when LLM_PROVIDER is unset (Answers then fail with a friendly error). */
-  llm: LlmSettings | null;
+  /** LLM credentials and the default provider and model; null when no provider is configured (Answers then fail). */
+  llm: LlmConfig | null;
   /** Slack bot (worker Socket Mode, outbound messages); absent when SLACK_BOT_TOKEN is unset. */
   slack?: SlackSettings;
 }
@@ -78,8 +78,7 @@ const schema = z
 
 type Env = z.infer<typeof schema>;
 
-function llmSettings(e: Env): LlmSettings | null {
-  if (!e.LLM_PROVIDER || !e.LLM_MODEL) return null;
+function llmConfig(e: Env): LlmConfig | null {
   const credentials: Partial<Record<LlmProviderName, LlmCredentials>> = {};
   for (const provider of LLM_PROVIDERS) {
     const value = e[LLM_CREDENTIAL_ENV[provider] as keyof Env] as string | undefined;
@@ -89,7 +88,9 @@ function llmSettings(e: Env): LlmSettings | null {
       credentials[provider] = { apiKey: value };
     }
   }
-  return { provider: e.LLM_PROVIDER, model: e.LLM_MODEL, credentials };
+  if (Object.keys(credentials).length === 0) return null;
+  const defaultChoice = e.LLM_PROVIDER && e.LLM_MODEL ? { provider: e.LLM_PROVIDER, model: e.LLM_MODEL } : null;
+  return { defaultChoice, credentials };
 }
 
 function isHttpUrl(text: string): boolean {
@@ -125,7 +126,7 @@ export function parseServerConfig(env: Record<string, string | undefined>): Serv
       encryptionKey: e.ENCRYPTION_KEY,
       ...appUrl(e),
     },
-    llm: llmSettings(e),
+    llm: llmConfig(e),
     ...(e.SLACK_BOT_TOKEN && { slack: { botToken: e.SLACK_BOT_TOKEN, ...(e.SLACK_APP_TOKEN && { appToken: e.SLACK_APP_TOKEN }) } }),
   };
 }

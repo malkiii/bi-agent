@@ -26,7 +26,7 @@ describe('server config from environment', () => {
     ])('%s is selected with LLM_PROVIDER, LLM_MODEL and %s', (provider, keyVar, credentials) => {
       const config = parseServerConfig({ ...minimal, LLM_PROVIDER: provider, LLM_MODEL: 'some-model', [keyVar]: 'k' });
 
-      expect(config.llm).toEqual({ provider, model: 'some-model', credentials: { [provider]: credentials } });
+      expect(config.llm).toEqual({ defaultChoice: { provider, model: 'some-model' }, credentials: { [provider]: credentials } });
     });
 
     test('Ollama defaults to a local server', () => {
@@ -45,6 +45,15 @@ describe('server config from environment', () => {
       });
 
       expect(config.llm?.credentials).toEqual({ openai: { apiKey: 'o' }, groq: { apiKey: 'g' } });
+    });
+
+    test('keys without LLM_PROVIDER make providers available to choose, with no default', () => {
+      const config = parseServerConfig({ ...minimal, ANTHROPIC_API_KEY: 'a', OLLAMA_BASE_URL: 'http://ollama:11434/api' });
+
+      expect(config.llm).toEqual({
+        defaultChoice: null,
+        credentials: { anthropic: { apiKey: 'a' }, ollama: { baseUrl: 'http://ollama:11434/api' } },
+      });
     });
 
     test('refuses an unknown provider, a missing model or a missing key', () => {

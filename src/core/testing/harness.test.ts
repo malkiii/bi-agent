@@ -10,7 +10,7 @@ afterEach(() => h.close());
 
 test('scripted LLM turns are returned in order', async () => {
   h.llm.script({ text: 'first' }, { text: 'second' });
-  const model = await h.llm.getModel();
+  const model = await h.llm.getModel({ provider: 'mock', model: 'mock-model' });
 
   expect((await generateText({ model, prompt: 'a' })).text).toBe('first');
   expect((await generateText({ model, prompt: 'b' })).text).toBe('second');

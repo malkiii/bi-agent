@@ -8,9 +8,23 @@ export interface Clock {
   now(): Date;
 }
 
-/** Resolves the active Vercel AI SDK model (provider + model come from settings). */
+/** An LLM provider (e.g. `anthropic`) and one of its model ids. */
+export interface LlmChoice {
+  provider: string;
+  model: string;
+}
+
+/**
+ * Builds Vercel AI SDK models for the providers whose credentials are configured (in `.env`).
+ * Which provider and model are active is an admin setting the App Core keeps.
+ */
 export interface LanguageModelProvider {
-  getModel(): Promise<LanguageModel>;
+  /** Providers with configured credentials, in display order. */
+  configuredProviders(): readonly string[];
+  /** The environment's default (LLM_PROVIDER, LLM_MODEL), used until an admin chooses; null when unset. */
+  defaultChoice(): LlmChoice | null;
+  /** Builds the model. Throws when `choice.provider` is not configured. */
+  getModel(choice: LlmChoice): Promise<LanguageModel>;
 }
 
 export interface SlackMessageRef {

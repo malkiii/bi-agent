@@ -15,6 +15,9 @@ export default function AdminPage() {
         <li>
           <Link href="/admin/users">Users &amp; roles</Link>
         </li>
+        <li>
+          <Link href="/admin/settings">Settings</Link>: the LLM provider and model.
+        </li>
       </ul>
       <p>The audit log will live here too.</p>
     </section>

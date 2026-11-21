@@ -8,10 +8,10 @@ export interface LlmCredentials {
   baseUrl?: string;
 }
 
-export interface LlmSettings {
-  provider: LlmProviderName;
-  model: string;
-  /** Every provider with configured credentials (admins may switch among these later). */
+export interface LlmConfig {
+  /** LLM_PROVIDER and LLM_MODEL: used until an admin chooses in settings; null when unset. */
+  defaultChoice: { provider: LlmProviderName; model: string } | null;
+  /** Every provider with configured credentials; admins choose among these. */
   credentials: Partial<Record<LlmProviderName, LlmCredentials>>;
 }
 

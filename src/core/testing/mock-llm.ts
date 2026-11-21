@@ -1,6 +1,6 @@
 import { simulateReadableStream } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
-import type { LanguageModelProvider } from '../ports';
+import type { LanguageModelProvider, LlmChoice } from '../ports';
 
 type GenerateResult = Awaited<ReturnType<MockLanguageModelV4['doGenerate']>>;
 type StreamResult = Awaited<ReturnType<MockLanguageModelV4['doStream']>>;
@@ -25,8 +25,29 @@ export type ScriptedTurn =
  */
 export class MockLlm implements LanguageModelProvider {
   model = new MockLanguageModelV4({ doGenerate: () => Promise.reject(new Error('MockLlm: no turns scripted')) });
+  /** Every provider/model a model was built for, in order. */
+  readonly choices: LlmChoice[] = [];
+  private providers: readonly string[] = ['mock'];
+  private defaultLlm: LlmChoice | null = { provider: 'mock', model: 'mock-model' };
 
-  async getModel() {
+  /** Pretend these providers have configured credentials, with this environment default. */
+  configure({ providers, defaultChoice }: { providers: readonly string[]; defaultChoice: LlmChoice | null }): void {
+    this.providers = providers;
+    this.defaultLlm = defaultChoice;
+  }
+
+  configuredProviders() {
+    return this.providers;
+  }
+
+  defaultChoice() {
+    return this.defaultLlm;
+  }
+
+  /** Records `choice` and returns the scripted model, whatever provider was chosen. */
+  async getModel(choice: LlmChoice) {
+    if (!this.providers.includes(choice.provider)) throw new Error(`MockLlm: ${choice.provider} is not configured`);
+    this.choices.push(choice);
     return this.model;
   }
 

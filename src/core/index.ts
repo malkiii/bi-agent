@@ -18,12 +18,14 @@ import { createUsers, ensureUserIndexes, type Users } from './users/users';
 import { createConversations, ensureConversationIndexes, type Conversations } from './conversations/conversations';
 import { createSlackBot, ensureSlackBotIndexes, type SlackBot } from './slack/slack-bot';
 import { createPinnedQueries, type PinnedQueries } from './pinned-queries/pinned-queries';
+import { createLlmSettings, type LlmSettings } from './llm-settings/llm-settings';
 import { createSavedQuestions, ensureSavedQuestionIndexes, type SavedQuestions } from './saved-questions/saved-questions';
 
 export * from './errors';
 export type * from './ports';
 export type { Role, SlackIdentity, User } from './users/users';
 export type { ThemePreference } from './preferences/preferences';
+export { MAX_MODEL_LENGTH, type LlmSettings, type LlmSettingsView } from './llm-settings/llm-settings';
 export type {
   CatalogColumn,
   CatalogDataset,
@@ -108,6 +110,8 @@ export interface AppCoreDeps {
 export interface AppCore {
   users: Users;
   preferences: Preferences;
+  /** The active LLM provider and model (admin settings). */
+  llmSettings: LlmSettings;
   dataSources: DataSources;
   conversations: Conversations;
   slackBot: SlackBot;
@@ -120,10 +124,11 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
   const users = createUsers(deps);
   const secretBox = createSecretBox(deps.config.encryptionKey);
   const dataSources = createDataSources({ db: deps.db, clock: deps.clock, users, drivers: deps.drivers, secretBox });
+  const llmSettings = createLlmSettings({ db: deps.db, clock: deps.clock, users, llm: deps.llm });
   const conversations = createConversations({
     db: deps.db,
     clock: deps.clock,
-    llm: deps.llm,
+    llm: llmSettings.active,
     dataSources,
     onAgentError: deps.onAgentError,
   });
@@ -131,6 +136,7 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
   return {
     users,
     preferences: createPreferences(deps),
+    llmSettings: llmSettings.settings,
     dataSources,
     conversations,
     slackBot: createSlackBot({

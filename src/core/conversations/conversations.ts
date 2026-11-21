@@ -12,7 +12,8 @@ import { createAgentCatalog } from '../agent/catalog';
 import type { AgentToolkitFactory } from '../agent/tools';
 import type { DataSources } from '../data-sources/data-sources';
 import { NotFoundError, ValidationError } from '../errors';
-import type { Clock, LanguageModelProvider } from '../ports';
+import type { Clock } from '../ports';
+import type { ActiveLanguageModel } from '../llm-settings/llm-settings';
 import type { Answer, AnswerEvent } from './answer';
 
 export type ConversationSource = { kind: 'web' } | { kind: 'slack'; channel: string; threadTs: string };
@@ -127,7 +128,7 @@ type MessageDoc = { _id: string; conversationId: string; seq: number } & Message
 interface Deps {
   db: Db;
   clock: Clock;
-  llm: LanguageModelProvider;
+  llm: ActiveLanguageModel;
   dataSources: DataSources;
   toolkits?: readonly AgentToolkitFactory[];
   onAgentError?: (error: unknown) => void;

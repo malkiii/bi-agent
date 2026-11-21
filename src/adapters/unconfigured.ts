@@ -1,7 +1,7 @@
 import type { LanguageModelProvider, SlackGateway } from '@/core';
 
 /**
- * Placeholders until the real adapters land (Slack Web API gateway, LLM settings).
+ * Placeholders when an adapter is not configured (no Slack bot token, no LLM credentials).
  * They fail loudly if anything tries to use them.
  */
 function notYet(what: string): never {
@@ -17,6 +17,9 @@ export const unconfiguredSlack: SlackGateway = {
   uploadFiles: async () => notYet('SlackGateway'),
 };
 
+/** No LLM credentials in the environment: nothing to choose, and Answers fail. */
 export const unconfiguredLlm: LanguageModelProvider = {
+  configuredProviders: () => [],
+  defaultChoice: () => null,
   getModel: async () => notYet('LanguageModelProvider'),
 };

@@ -4,7 +4,7 @@
  * about web or Slack: callers pass history as model messages and receive `AnswerEvent`s.
  */
 import { isStepCount, streamText, type ModelMessage, type ToolSet } from 'ai';
-import type { LanguageModelProvider } from '../ports';
+import type { ActiveLanguageModel } from '../llm-settings/llm-settings';
 import type { Answer, AnswerEvent } from '../conversations/answer';
 import { AnswerDraft } from './answer-draft';
 import type { AgentCatalog } from './catalog';
@@ -25,7 +25,7 @@ const BASE_INSTRUCTIONS = [
 ].join('\n');
 
 export interface RunAgentInput {
-  llm: LanguageModelProvider;
+  llm: ActiveLanguageModel;
   catalog: AgentCatalog;
   /** Earlier turns of the Conversation. */
   history: ModelMessage[];

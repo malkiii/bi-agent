@@ -1,7 +1,8 @@
 /**
- * LanguageModelProvider for production: the default provider and model come from the
- * environment (see src/server/config.ts). Always builds provider instances; a bare model
- * string would route through the Vercel AI Gateway, which a self-hosted app must not use.
+ * LanguageModelProvider for production: offers the providers whose credentials are in the
+ * environment (see src/server/config.ts); the App Core picks the active one. Always builds
+ * provider instances; a bare model string would route through the Vercel AI Gateway, which a
+ * self-hosted app must not use.
  */
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogle } from '@ai-sdk/google';
@@ -11,7 +12,7 @@ import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { LanguageModel } from 'ai';
 import { createOllama } from 'ollama-ai-provider-v2';
 import type { LanguageModelProvider } from '@/core';
-import type { LlmCredentials, LlmProviderName, LlmSettings } from './llm-settings';
+import { LLM_PROVIDERS, type LlmConfig, type LlmCredentials, type LlmProviderName } from './llm-settings';
 
 export function createLanguageModel(provider: LlmProviderName, model: string, credentials: LlmCredentials = {}): LanguageModel {
   const { apiKey, baseUrl } = credentials;
@@ -31,7 +32,15 @@ export function createLanguageModel(provider: LlmProviderName, model: string, cr
   }
 }
 
-export function createLanguageModelProvider(settings: LlmSettings): LanguageModelProvider {
-  const model = createLanguageModel(settings.provider, settings.model, settings.credentials[settings.provider]);
-  return { getModel: async () => model };
+export function createLanguageModelProvider(config: LlmConfig): LanguageModelProvider {
+  const providers = LLM_PROVIDERS.filter((p) => config.credentials[p]);
+  return {
+    configuredProviders: () => providers,
+    defaultChoice: () => config.defaultChoice,
+    async getModel({ provider, model }) {
+      const name = providers.find((p) => p === provider);
+      if (!name) throw new Error(`The LLM provider "${provider}" has no configured credentials.`);
+      return createLanguageModel(name, model, config.credentials[name]);
+    },
+  };
 }
