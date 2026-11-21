@@ -4,6 +4,7 @@ import { NotFoundError } from '@/core';
 import { forkConversationAction } from '@/web/chat/actions';
 import { ChatView } from '@/web/chat/ChatView';
 import styles from '@/web/chat/chat.module.css';
+import { chatDataSources } from '@/web/chat/data-sources';
 import { toChatItems } from '@/web/chat/items';
 import { PendingButton } from '@/web/components/PendingButton';
 import { requireUser } from '@/web/current-user';
@@ -55,7 +56,14 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
           Slack.
         </p>
       )}
-      <ChatView key={conversation.id} conversationId={conversation.id} initialItems={toChatItems(messages)} readOnly={slack} />
+      <ChatView
+        key={conversation.id}
+        conversationId={conversation.id}
+        initialItems={toChatItems(messages)}
+        readOnly={slack}
+        dataSources={slack ? [] : await chatDataSources(core, conversation.lockedDataSourceIds)}
+        lockedDataSourceIds={conversation.lockedDataSourceIds}
+      />
     </div>
   );
 }

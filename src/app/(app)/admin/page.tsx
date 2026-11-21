@@ -13,6 +13,9 @@ export default function AdminPage() {
           <Link href="/catalog">Catalog</Link>: Dataset and column descriptions and Synonyms (Edit on each Dataset).
         </li>
         <li>
+          <Link href="/admin/channels">Channel Defaults</Link>: the Data Sources Botley uses in each Slack channel.
+        </li>
+        <li>
           <Link href="/admin/users">Users &amp; roles</Link>
         </li>
         <li>

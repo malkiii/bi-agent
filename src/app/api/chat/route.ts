@@ -1,5 +1,5 @@
 import { auth } from '@/auth';
-import { AppError, NotFoundError } from '@/core';
+import { AppError, NotFoundError, ValidationError } from '@/core';
 import type { ChatRequest, ChatStreamEvent } from '@/web/chat/wire';
 import { getCore } from '@/web/server-runtime';
 
@@ -25,15 +25,23 @@ export async function POST(req: Request) {
   const prompt = typeof body.prompt === 'string' ? body.prompt : '';
   if (!prompt.trim()) return Response.json({ error: 'Write a Prompt first.' }, { status: 400 });
 
+  const dataSourceIds = Array.isArray(body.dataSourceIds) ? body.dataSourceIds.filter((id) => typeof id === 'string') : undefined;
+
   const core = await getCore();
   let conversationId: string;
   try {
-    conversationId =
-      typeof body.conversationId === 'string' && body.conversationId
-        ? (await core.conversations.get(slackUserId, body.conversationId)).conversation.id
-        : (await core.conversations.startWeb(slackUserId)).id;
+    if (typeof body.conversationId === 'string' && body.conversationId) {
+      const { conversation } = await core.conversations.get(slackUserId, body.conversationId);
+      conversationId = conversation.id;
+      if (dataSourceIds && !sameIds(dataSourceIds, conversation.lockedDataSourceIds ?? [])) {
+        await core.conversations.lock(slackUserId, conversationId, dataSourceIds);
+      }
+    } else {
+      conversationId = (await core.conversations.startWeb(slackUserId, { dataSourceIds })).id;
+    }
   } catch (error) {
     if (error instanceof NotFoundError) return Response.json({ error: error.message }, { status: 404 });
+    if (error instanceof ValidationError) return Response.json({ error: error.message }, { status: 400 });
     throw error;
   }
 
@@ -67,4 +75,8 @@ export async function POST(req: Request) {
   return new Response(stream, {
     headers: { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store' },
   });
+}
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id) => b.includes(id));
 }

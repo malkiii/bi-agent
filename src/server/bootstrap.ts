@@ -3,6 +3,7 @@ import { createAppCore, prepareDatabase, type AppCore } from '@/core';
 import { systemClock } from '@/adapters/system-clock';
 import { builtInDrivers } from '@/drivers';
 import { createUploadsBackend } from '@/drivers/uploads';
+import { createDuckDbResultCombiner } from '@/drivers/uploads/combine';
 import { unconfiguredLlm, unconfiguredSlack } from '@/adapters/unconfigured';
 import { createLanguageModelProvider } from '@/adapters/llm';
 import { createSlackWebGateway } from '@/adapters/slack-web-gateway';
@@ -35,6 +36,7 @@ export async function bootstrap(config: ServerConfig): Promise<ServerRuntime> {
     llm: config.llm ? createLanguageModelProvider(config.llm) : unconfiguredLlm,
     drivers: { ...builtInDrivers, [uploads.kind.kind]: uploads.kind },
     uploadStorage: uploads.storage,
+    combiner: createDuckDbResultCombiner(),
     config: config.core,
     onAgentError: (error) => console.error('Answer failed:', error),
   });

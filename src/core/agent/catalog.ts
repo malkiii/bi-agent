@@ -1,4 +1,4 @@
-import type { CatalogDataset, DataSources } from '../data-sources/data-sources';
+import { hasExposedDatasets, type CatalogDataset, type DataSources } from '../data-sources/data-sources';
 import type { Dialect, DriverQuery, QueryResult } from '../data-sources/driver';
 
 /** A Data Source as the agent sees it: only its Exposed Datasets, plus its dialect. */
@@ -13,7 +13,8 @@ export interface AgentDataSource {
 /**
  * What the agent may query during one Answer. Data Sources without Exposed Datasets don't
  * exist for it. This is the one place that narrows the choice of Data Sources: the
- * Conversation lock (web) and Channel Default (Slack) plug in here via `onlyDataSourceIds`.
+ * Conversation lock (web) plugs in as `onlyDataSourceIds`, the Channel Default (Slack) as
+ * `preferredDataSourceIds`.
  */
 export interface AgentCatalog {
   dataSources(): Promise<AgentDataSource[]>;
@@ -23,17 +24,24 @@ export interface AgentCatalog {
 
 export function createAgentCatalog(
   dataSources: DataSources,
-  options: { onlyDataSourceIds?: readonly string[] } = {},
+  options: {
+    /** Only these Data Sources, even when none of them can be queried. */
+    onlyDataSourceIds?: readonly string[];
+    /** Only these Data Sources while at least one of them can be queried; otherwise all of them. */
+    preferredDataSourceIds?: readonly string[];
+  } = {},
 ): AgentCatalog {
   let loaded: Promise<AgentDataSource[]> | undefined;
 
   async function load(): Promise<AgentDataSource[]> {
-    const all = await dataSources.list();
-    const visible = all.filter(
-      (ds) =>
-        ds.datasets.some((d) => d.exposed) &&
-        (!options.onlyDataSourceIds || options.onlyDataSourceIds.includes(ds.id)),
-    );
+    const queryable = (await dataSources.list()).filter(hasExposedDatasets);
+    const among = (ids: readonly string[]) => queryable.filter((ds) => ids.includes(ds.id));
+    const preferred = options.preferredDataSourceIds ? among(options.preferredDataSourceIds) : [];
+    const visible = options.onlyDataSourceIds
+      ? among(options.onlyDataSourceIds)
+      : preferred.length > 0
+        ? preferred
+        : queryable;
     return Promise.all(
       visible.map(async (ds) => ({
         dataSourceId: ds.id,

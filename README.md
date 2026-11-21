@@ -81,18 +81,19 @@ One package. `web` and `worker` are built from the same TypeScript sources, and 
 src/
   core/            App Core: transport-agnostic use cases. The main test seam.
     index.ts       createAppCore(deps), prepareDatabase(db), public types and errors
-    ports.ts       Clock, SlackGateway, LanguageModelProvider
+    ports.ts       Clock, SlackGateway, LanguageModelProvider, UploadStorage, ResultCombiner
     errors.ts      AppError subclasses (WrongWorkspaceError, ForbiddenError, NotFoundError, LastAdminError, ValidationError)
     secret-box.ts  AES-256-GCM sealing of secrets under ENCRYPTION_KEY
     users/         Slack sign-in, roles (list, setRole), requireAdmin
     preferences/   Per-user UI preferences (theme)
     llm-settings/  Admin choice of LLM provider and model, resolved on every Prompt
+    channel-defaults/ Channel Defaults: the Data Sources the agent prefers per Slack channel (admin)
     data-sources/  driver.ts (the driver contract types), data-sources.ts (admin CRUD, test, introspect, Exposed Datasets, withDriver)
-    conversations/ answer.ts (Answer + Result Block model, AnswerEvent), conversations.ts (startWeb, findOrStartSlack, ask, get, list, history, fork)
+    conversations/ answer.ts (Answer + Result Block model, AnswerEvent), conversations.ts (startWeb, lock, findOrStartSlack, ask, get, list, history, fork)
     charts/        chart.ts (Chart block: spec check, rows, themed Vega-Lite; pure, browser-safe), png.ts (server PNG via vega + resvg)
     files/         table-files.ts (Table block -> CSV / XLSX, file names; pure)
     slack/         slack-bot.ts (handlePrompt, showQuery, thread uploads), render.ts (Answer -> Block Kit + uploads, pure)
-    agent/         The agent loop: agent.ts (runAgent), tools.ts (toolkits), catalog.ts (what the agent may query), answer-draft.ts
+    agent/         The agent loop: agent.ts (runAgent), tools.ts (toolkits, incl. combineResults), catalog.ts (what the agent may query: lock, Channel Default), answer-draft.ts
     pinned-queries/ Pin an Answer's queries + layout, re-run them without the LLM (Saved Questions, Reports, KPIs)
     saved-questions/ Saved Questions: save an Answer, private/shared, re-run
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
@@ -105,12 +106,13 @@ src/
     mssql/         SQL Server (kind `mssql`)
     mongodb/       mongodb.ts (driver + kind), testing.ts (per-test databases), mongodb.test.ts
     salesforce/    salesforce.ts (SOQL driver + OAuth kind), testing.ts (fake Salesforce HTTP server)
+    uploads/       Uploads kind + storage over Parquet (duckdb.ts), combine.ts (ResultCombiner for combineResults)
   server/          Process wiring shared by web and worker: env config, bootstrap()
   worker/          Worker process: main.ts (entry), worker.ts (startWorker)
   web/             Web-only code: auth helpers, server runtime, components
     botley/        Botley's state machine (machine.ts) and store (BotleyProvider.tsx)
     theme/         Light/dark theme: toggle, server action, per-user preference
-    chat/          Web chat: ChatView (prompt box + streamed Answers), AnswerView (blocks, sources, show query, CSV/XLSX links), ChartView (vega-embed), actions.ts (fork), wire.ts (NDJSON protocol)
+    chat/          Web chat: ChatView (prompt box + streamed Answers), AnswerView (blocks, sources, show query, CSV/XLSX links), ChartView (vega-embed), DataSourcePicker (lock to Data Sources), actions.ts (fork), wire.ts (NDJSON protocol)
     saved-questions/ "Save question" button, re-run view, server actions
   app/             Next.js App Router routes
     (app)/         Signed-in pages inside the app shell
@@ -176,15 +178,18 @@ Every transport answers through one App Core use case, `core.conversations.ask(a
 - **Events**: `onEvent` gets `progress` (a label such as "Querying Warehouse…"), `query` and `block` events while the agent works. The web streams them to the browser; Slack updates its placeholder message with the `progress` labels.
 - **Slack** (`src/core/slack/`, ADR 0004): the worker's Bolt adapter (`src/worker/slack-app.ts`) turns `app_mention` and DM `message` events into `core.slackBot.handlePrompt(...)`. That use case ignores redelivered events (`slackEvents`, keyed by channel + ts, 24 h TTL), reacts 👀, posts a placeholder in the thread, edits it with each `progress` label, then edits in the rendered Answer (❌ plus the error on failure), then posts its chart PNGs and table files in the thread (`SlackGateway.uploadFiles`, one message per block; if an upload fails, a warning is posted and the Answer stays). `render.ts` is pure: `renderAnswer` returns Block Kit plus `uploads` (Text as mrkdwn sections; the first Table as a Block Kit table, later tables as monospaced text; tables of up to `SLACK_INLINE_TABLE_ROWS` = 15 rows are shown whole, longer or truncated ones show `SLACK_PREVIEW_TABLE_ROWS` = 10 rows and attach the full table as CSV and XLSX; each Chart is a line in the message plus a PNG upload rendered by `renderChartPng`; sources footer; "Show query" button whose value is the Answer message id; "Open in dashboard" link button to `$APP_URL/chat/fork/<conversationId>`) and `renderQueryModal`. New Result Block kinds get a `case` in `renderAnswer`. `SlackGateway` (port) is implemented by `src/adapters/slack-web-gateway.ts` and, in tests, `InMemorySlackGateway` (`messages`, `reactions`, `modals`, `uploads`, `failUploads`).
 - **The loop** (`src/core/agent/agent.ts`): AI SDK `streamText` with tools and `stopWhen: isStepCount(MAX_AGENT_STEPS)`. The model builds the Answer by calling emit tools. Plain text in its last step becomes a Text block too.
-- **Tools** come in toolkits (`src/core/agent/tools.ts`). A toolkit is `(ctx: { catalog, answer }) => { tools, instructions? }`, and `builtInToolkits` lists them: `catalogToolkit` (`listDatasets`, `describeDataset`), `queryToolkit` (`runQuery`), `emitToolkit` (`emitText`, `emitTable`) and `chartToolkit` (`emitChart`: `checkChartSpec` refuses unknown fields, marks other than bar/line/area/arc/point/text, composition, and any `data`/`url`/`href`/image, then Vega-Lite compiles it; refusals go back to the model). To add `combineResults`, write a toolkit that reads results with `answer.result(resultId)` and adds blocks with `answer.addBlock(...)`, then add it to `builtInToolkits`.
+- **Tools** come in toolkits (`src/core/agent/tools.ts`). A toolkit is `(ctx: { catalog, answer, combiner? }) => { tools, instructions? }`, and `builtInToolkits` lists them: `catalogToolkit` (`listDatasets`, `describeDataset`), `queryToolkit` (`runQuery`), `combineToolkit` (`combineResults`), `emitToolkit` (`emitText`, `emitTable`) and `chartToolkit` (`emitChart`: `checkChartSpec` refuses unknown fields, marks other than bar/line/area/arc/point/text, composition, and any `data`/`url`/`href`/image, then Vega-Lite compiles it; refusals go back to the model). A new toolkit reads results with `answer.result(resultId)`, adds blocks with `answer.addBlock(...)` and goes into `builtInToolkits`.
 - **runQuery** runs through the Data Source's driver (read-only enforcement stays in the driver). `QueryRejectedError`, `QueryFailedError` and `QueryTimeoutError` messages go back to the model as `{ ok: false, error, attemptsLeft }` so it can fix the query. After `MAX_FAILED_QUERIES` (4) failures in one Answer it stops running queries. The model sees 20 preview rows. The full result stays in the draft under its `resultId` for the emit tools. MongoDB sources take the query as a JSON string.
-- **Which Data Sources** (`src/core/agent/catalog.ts`): only Data Sources with Exposed Datasets, and only those Datasets. `createAgentCatalog(dataSources, { onlyDataSourceIds })` is where the Conversation lock (web) and Channel Default (Slack) plug in.
+- **combineResults** joins or unions earlier results of the same Answer, e.g. from two Data Sources: `{ resultIds, sql, name? }`. The `ResultCombiner` port (`src/drivers/uploads/combine.ts`, `AppCoreDeps.combiner`) loads each result as a table named by its resultId into a fresh in-memory DuckDB, sandboxed like the Uploads driver (`assertReadOnlySql`, external access off, configuration locked, timeout), and closes it afterwards. The combined result is recorded as an `ExecutedQuery` with `combines: [resultIds]` and the pseudo source `COMBINED_RESULTS` (`combineResults` / "Combined results"). It counts toward `MAX_FAILED_QUERIES` and is `truncated` when an input was. Without a combiner the tool is left out.
+- **Which Data Sources** (`src/core/agent/catalog.ts`): only Data Sources with Exposed Datasets, and only those Datasets. The selection order is the Conversation lock (web), then the Channel Default (Slack), then the agent's own choice. `createAgentCatalog(dataSources, { onlyDataSourceIds, preferredDataSourceIds })`: `onlyDataSourceIds` (the lock) is strict, while `preferredDataSourceIds` (the Channel Default) falls back to every Data Source when none of the preferred ones can be queried any more.
+  - **Lock**: `conversations.startWeb(actor, { dataSourceIds? })` and `conversations.lock(actor, id, dataSourceIds)` (Participants, web only, existing Data Sources; `[]` unlocks) set `Conversation.lockedDataSourceIds`. The web chat's Data Source picker sends `dataSourceIds` with each `POST /api/chat`, and the route locks when the value changed.
+  - **Channel Defaults**: `core.channelDefaults` (`src/core/channel-defaults/`, Mongo `channelDefaults` keyed by channel id), admin only: `list`, `set(actor, channel, dataSourceIds)`, `remove`, and `slackChannels` (the channels the bot is in, via `SlackGateway.listChannels`, which needs `channels:read` and `groups:read`). `forChannel(channel)` is read for every Slack Prompt. Web: `/admin/channels`. DMs have none.
 - **LLM**: `LanguageModelProvider` (port, `src/adapters/llm.ts`) builds models for every provider with credentials in the environment. The App Core's `llmSettings` keeps the admin's provider/model choice in Mongo (`appSettings`, falling back to `LLM_PROVIDER`/`LLM_MODEL`) and reads it on every Prompt, so `web` and `worker` switch without a restart.
 - **Tests** script the model with `h.llm.script(...)`. Each turn serves both `doGenerate` and `doStream`, and `h.llm.model.doStreamCalls[n].prompt` shows what the model received. See `src/core/conversations/conversations.test.ts` (real Postgres + Mongo).
 
 Web chat: `/chat` (new Conversation + recent list) and `/chat/[id]` (reopen; Slack Conversations are read-only there, and `conversations.ask` refuses them). Charts are drawn with vega-embed in the theme colours read from the CSS tokens, redrawn when the theme changes. Stored Table blocks offer CSV/XLSX downloads from `GET /api/answers/[messageId]/blocks/[index]?format=csv|xlsx` (Participants only, else 404).
 
-History and Forks: `/history` lists `conversations.history(actor, { source?, page })` (Participant only, newest first, 20 per page). A Slack Conversation's "Open in dashboard" (Slack button, history, `/chat/[id]`) goes to `/chat/fork/[id]`, whose button (a POST, so link previews never create anything) calls `conversations.fork(actor, id)`: a new Web Conversation for that Participant with `forkedFrom` and a copy of the thread's messages, which become model context. The Slack Conversation is never changed. `POST /api/chat` `{ conversationId?, prompt }` streams NDJSON `ChatStreamEvent`s (`conversation`, the `AnswerEvent`s, then `answer` (with the stored `messageId`) or `error`). See `src/web/chat/wire.ts`.
+History and Forks: `/history` lists `conversations.history(actor, { source?, page })` (Participant only, newest first, 20 per page). A Slack Conversation's "Open in dashboard" (Slack button, history, `/chat/[id]`) goes to `/chat/fork/[id]`, whose button (a POST, so link previews never create anything) calls `conversations.fork(actor, id)`: a new Web Conversation for that Participant with `forkedFrom` and a copy of the thread's messages, which become model context. The Slack Conversation is never changed. `POST /api/chat` `{ conversationId?, prompt, dataSourceIds? }` streams NDJSON `ChatStreamEvent`s (`conversation`, the `AnswerEvent`s, then `answer` (with the stored `messageId`) or `error`). See `src/web/chat/wire.ts`.
 
 ## Pinned Queries and Saved Questions
 
@@ -196,7 +201,7 @@ ADR 0001: a pinned Answer is re-run by executing its stored queries through the 
 
 ```ts
 const pinned: PinnedAnswer = core.pinnedQueries.pin(answer);
-// { queries: PinnedQuery[] (successful ones only: resultId, dataSourceId, dataSourceName, language, query),
+// { queries: PinnedQuery[] (successful ones only: resultId, dataSourceId, dataSourceName, language, query, combines?),
 //   layout: PinnedBlock[] ({ type: 'text', markdown } | { type: 'table', resultId, title?, columns: string[] }
 //                          | { type: 'chart', resultId, title?, spec }) }
 // ValidationError if the Answer failed or no data block can be rebuilt.
@@ -208,7 +213,7 @@ const run: PinnedRun = await core.pinnedQueries.run(pinned);
 ```
 
 - `run` never rejects because a query failed. A failing query (schema change, a Data Source that was deleted or no longer has Exposed Datasets) makes `status: 'failed'` and sets `error` (`The Pinned Query "totals" failed: …`). Each block built from that query becomes `{ status: 'error' }`, and the other blocks are still rebuilt. A column that disappeared from a result fails only its block.
-- Queries run through the same catalog as the agent (`createAgentCatalog`), so they obey the same Data Source visibility. Read-only enforcement stays in the drivers.
+- Queries run through the same catalog as the agent (`createAgentCatalog`), so they obey the same Data Source visibility. Read-only enforcement stays in the drivers. `combineResults` queries (`combines` set) run afterwards, in their recorded order, over the fresh results they read. One fails when any of its inputs did.
 - Text blocks are pinned verbatim, so their numbers are as old as the save. The Saved Question view says so. Reports should replace or add to them with fresh commentary written from `run.results`. KPIs read `run.results[resultId].rows[0][0]`.
 - **To add a block type:** add it to `ResultBlock` and `PinnedBlock`, then add an entry `{ pin, dependsOn, rebuild }` to `pinnableBlocks`. The table is keyed by `ResultBlock['type']`, so it won't compile until you do.
 

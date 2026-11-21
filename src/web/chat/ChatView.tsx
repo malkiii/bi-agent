@@ -5,27 +5,36 @@ import { useBotley } from '@/web/botley/BotleyProvider';
 import { SaveQuestionButton } from '@/web/saved-questions/SaveQuestionButton';
 import { AnswerView } from './AnswerView';
 import type { ChatItem } from './items';
+import { DataSourcePicker, type DataSourceOption } from './DataSourcePicker';
 import { createNdjsonParser, type ChatRequest, type ChatStreamEvent } from './wire';
 import styles from './chat.module.css';
 
 /**
  * The web chat: the Conversation so far plus the prompt box. Sends each Prompt to
  * POST /api/chat and renders the streamed Answer as it arrives. `readOnly` shows the
- * messages only (Slack Conversations, which continue in Slack or in a Fork).
+ * messages only (Slack Conversations, which continue in Slack or in a Fork). With
+ * `dataSources`, a picker locks the Conversation to some of them (sent with each Prompt).
  */
 export function ChatView({
   conversationId: initialId,
   initialItems,
   readOnly = false,
+  dataSources = [],
+  lockedDataSourceIds = [],
 }: {
   conversationId?: string;
   initialItems: ChatItem[];
   readOnly?: boolean;
+  /** Data Sources the agent can query, to lock the Conversation to. */
+  dataSources?: DataSourceOption[];
+  lockedDataSourceIds?: string[];
 }) {
   const [conversationId, setConversationId] = useState(initialId);
   const [items, setItems] = useState<ChatItem[]>(initialItems);
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
+  // Locked Data Sources that were deleted since are dropped, so the next Prompt sends a lock that still works.
+  const [locked, setLocked] = useState(() => lockedDataSourceIds.filter((id) => dataSources.some((ds) => ds.id === id)));
   const seq = useRef(0);
   const { setBotleyState, settleBotley } = useBotley();
 
@@ -73,7 +82,7 @@ export function ChatView({
     };
 
     try {
-      const body: ChatRequest = { conversationId, prompt: text };
+      const body: ChatRequest = { conversationId, prompt: text, dataSourceIds: locked };
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -140,6 +149,9 @@ export function ChatView({
             ),
           )}
         </ol>
+      )}
+      {!readOnly && dataSources.length > 1 && (
+        <DataSourcePicker options={dataSources} selected={locked} onChange={setLocked} disabled={busy} />
       )}
       {!readOnly && (
         <form className={`${styles.promptBox} ${empty ? styles.promptBoxBig : ''}`} onSubmit={submit}>

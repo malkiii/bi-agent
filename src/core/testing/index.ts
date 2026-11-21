@@ -23,6 +23,7 @@ import { InMemorySlackGateway } from './in-memory-slack';
 import { MockLlm } from './mock-llm';
 import { builtInDrivers } from '@/drivers';
 import { createUploadsBackend } from '@/drivers/uploads';
+import { createDuckDbResultCombiner } from '@/drivers/uploads/combine';
 import type { DriverRegistry } from '../data-sources/driver';
 
 export { FakeClock } from './fake-clock';
@@ -66,7 +67,16 @@ export async function createTestHarness(options: TestHarnessOptions = {}): Promi
   const uploadsDir = await mkdtemp(path.join(tmpdir(), 'botley-uploads-'));
   const uploads = createUploadsBackend(uploadsDir);
   const drivers = options.drivers ?? { ...builtInDrivers, [uploads.kind.kind]: uploads.kind };
-  const core = createAppCore({ db, clock, slack, llm, drivers, config, uploadStorage: uploads.storage });
+  const core = createAppCore({
+    db,
+    clock,
+    slack,
+    llm,
+    drivers,
+    config,
+    uploadStorage: uploads.storage,
+    combiner: createDuckDbResultCombiner(),
+  });
 
   return {
     core,

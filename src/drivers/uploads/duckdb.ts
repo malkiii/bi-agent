@@ -22,6 +22,7 @@ import {
   type DataSourceDriver,
   type Dialect,
   type IntrospectedDataset,
+  type QueryLimits,
   type QueryResult,
 } from '@/core/data-sources/driver';
 import { IDENTIFIER_PATTERN } from '@/core/uploads/column-types';
@@ -93,6 +94,39 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Runs one statement that already passed `assertReadOnlySql` on a sandboxed connection: a timer
+ * interrupts it past the timeout, rows are streamed and only maxRows + 1 kept.
+ */
+export async function runReadOnlySql(
+  connection: DuckDBConnection,
+  sql: string,
+  limits: Partial<QueryLimits> = {},
+): Promise<QueryResult> {
+  const { timeoutMs, maxRows } = { ...DEFAULT_QUERY_LIMITS, ...limits };
+  const started = performance.now();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    connection.interrupt();
+  }, timeoutMs);
+  try {
+    const reader = await connection.streamAndReadUntil(sql, maxRows + 1);
+    const columns = reader.columnNames().map((name, i) => ({
+      name,
+      type: duckDbColumnType(reader.columnType(i).toString()),
+    }));
+    const all = reader.getRowsJS();
+    const rows = all.slice(0, maxRows).map((row) => row.map((value, i) => toJsonFriendly(value, columns[i]!.type)));
+    return { columns, rows, truncated: all.length > maxRows, durationMs: Math.round(performance.now() - started) };
+  } catch (error) {
+    if (timedOut || /INTERRUPT/i.test(messageOf(error))) throw new QueryTimeoutError(timeoutMs);
+    throw new QueryFailedError(messageOf(error));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function createDuckDbDriver({ directory }: { directory: string }): DataSourceDriver {
   let opened: Promise<{ instance: DuckDBInstance; connection: DuckDBConnection; ids: string[] }> | undefined;
 
@@ -161,39 +195,10 @@ export function createDuckDbDriver({ directory }: { directory: string }): DataSo
     },
 
     async execute(query, limits = {}): Promise<QueryResult> {
-      const { timeoutMs, maxRows } = { ...DEFAULT_QUERY_LIMITS, ...limits };
       if (typeof query !== 'string') throw new QueryRejectedError('Uploads take a SQL string.');
       const sql = assertReadOnlySql(query, 'duckdb');
       const { connection } = await session();
-
-      const started = performance.now();
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        connection.interrupt();
-      }, timeoutMs);
-      try {
-        const reader = await connection.streamAndReadUntil(sql, maxRows + 1);
-        const columns = reader.columnNames().map((name, i) => ({
-          name,
-          type: duckDbColumnType(reader.columnType(i).toString()),
-        }));
-        const all = reader.getRowsJS();
-        const rows = all
-          .slice(0, maxRows)
-          .map((row) => row.map((value, i) => toJsonFriendly(value, columns[i]!.type)));
-        return {
-          columns,
-          rows,
-          truncated: all.length > maxRows,
-          durationMs: Math.round(performance.now() - started),
-        };
-      } catch (error) {
-        if (timedOut || /INTERRUPT/i.test(messageOf(error))) throw new QueryTimeoutError(timeoutMs);
-        throw new QueryFailedError(messageOf(error));
-      } finally {
-        clearTimeout(timer);
-      }
+      return runReadOnlySql(connection, sql, limits);
     },
 
     async close() {

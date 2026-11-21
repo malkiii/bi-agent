@@ -10,7 +10,7 @@ import {
   type DataSources,
 } from './data-sources/data-sources';
 import type { DriverRegistry } from './data-sources/driver';
-import type { Clock, LanguageModelProvider, SlackGateway, UploadStorage } from './ports';
+import type { Clock, LanguageModelProvider, ResultCombiner, SlackGateway, UploadStorage } from './ports';
 import { createUploads, ensureUploadIndexes, type Uploads } from './uploads/uploads';
 import { createPreferences, ensurePreferenceIndexes, type Preferences } from './preferences/preferences';
 import { createSecretBox } from './secret-box';
@@ -20,12 +20,14 @@ import { createSlackBot, ensureSlackBotIndexes, type SlackBot } from './slack/sl
 import { createPinnedQueries, type PinnedQueries } from './pinned-queries/pinned-queries';
 import { createLlmSettings, type LlmSettings } from './llm-settings/llm-settings';
 import { createSavedQuestions, ensureSavedQuestionIndexes, type SavedQuestions } from './saved-questions/saved-questions';
+import { createChannelDefaults, type ChannelDefaults } from './channel-defaults/channel-defaults';
 
 export * from './errors';
 export type * from './ports';
 export type { Role, SlackIdentity, User } from './users/users';
 export type { ThemePreference } from './preferences/preferences';
 export { MAX_MODEL_LENGTH, type LlmSettings, type LlmSettingsView } from './llm-settings/llm-settings';
+export { hasExposedDatasets } from './data-sources/data-sources';
 export type {
   CatalogColumn,
   CatalogDataset,
@@ -49,6 +51,7 @@ export type {
   HistoryPage,
 } from './conversations/conversations';
 export type { SlackBot, SlackPrompt } from './slack/slack-bot';
+export type { ChannelDefault, ChannelDefaults } from './channel-defaults/channel-defaults';
 export { OPEN_IN_DASHBOARD_ACTION_ID, SHOW_QUERY_ACTION_ID } from './slack/render';
 export type { AgentToolContext, AgentToolkit, AgentToolkitFactory } from './agent/tools';
 export { pinAnswer, PinnedBlockError } from './pinned-queries/pinned-queries';
@@ -103,6 +106,8 @@ export interface AppCoreDeps {
   config: AppCoreConfig;
   /** Where uploaded files and Datasets are stored; uploads are off without it. */
   uploadStorage?: UploadStorage;
+  /** Joins results across Data Sources (combineResults); without it the agent can't, and such Pinned Queries fail. */
+  combiner?: ResultCombiner;
   /** Called with the underlying error when an Answer fails (model or tool crash), for logging. */
   onAgentError?: (error: unknown) => void;
 }
@@ -113,6 +118,8 @@ export interface AppCore {
   /** The active LLM provider and model (admin settings). */
   llmSettings: LlmSettings;
   dataSources: DataSources;
+  /** The Data Sources the agent prefers per Slack channel (admin settings). */
+  channelDefaults: ChannelDefaults;
   conversations: Conversations;
   slackBot: SlackBot;
   pinnedQueries: PinnedQueries;
@@ -125,19 +132,23 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
   const secretBox = createSecretBox(deps.config.encryptionKey);
   const dataSources = createDataSources({ db: deps.db, clock: deps.clock, users, drivers: deps.drivers, secretBox });
   const llmSettings = createLlmSettings({ db: deps.db, clock: deps.clock, users, llm: deps.llm });
+  const channelDefaults = createChannelDefaults({ db: deps.db, clock: deps.clock, users, dataSources, slack: deps.slack });
   const conversations = createConversations({
     db: deps.db,
     clock: deps.clock,
     llm: llmSettings.active,
     dataSources,
     onAgentError: deps.onAgentError,
+    channelDefault: (channel) => channelDefaults.forChannel(channel),
+    combiner: deps.combiner,
   });
-  const pinnedQueries = createPinnedQueries({ dataSources, clock: deps.clock });
+  const pinnedQueries = createPinnedQueries({ dataSources, clock: deps.clock, combiner: deps.combiner });
   return {
     users,
     preferences: createPreferences(deps),
     llmSettings: llmSettings.settings,
     dataSources,
+    channelDefaults,
     conversations,
     slackBot: createSlackBot({
       db: deps.db,

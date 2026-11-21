@@ -59,5 +59,21 @@ export function createSlackWebGateway(client: WebClient): SlackGateway {
       // The overloads tie thread_ts to channel_id in ways a spread can't express.
       await client.filesUploadV2(args as Parameters<WebClient['filesUploadV2']>[0]);
     },
+
+    async listChannels() {
+      const channels: { id: string; name: string }[] = [];
+      let cursor: string | undefined;
+      do {
+        const res = await client.users.conversations({
+          types: 'public_channel,private_channel',
+          exclude_archived: true,
+          limit: 200,
+          ...(cursor && { cursor }),
+        });
+        for (const c of res.channels ?? []) if (c.id && c.name) channels.push({ id: c.id, name: c.name });
+        cursor = res.response_metadata?.next_cursor || undefined;
+      } while (cursor);
+      return channels.sort((a, b) => a.name.localeCompare(b.name));
+    },
   };
 }

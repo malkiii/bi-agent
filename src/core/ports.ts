@@ -3,6 +3,7 @@
  * Production adapters live in `src/adapters`, test doubles in `src/core/testing`.
  */
 import type { LanguageModel } from 'ai';
+import type { QueryResult } from './data-sources/driver';
 
 export interface Clock {
   now(): Date;
@@ -57,6 +58,13 @@ export interface SlackFileUpload {
   comment?: string;
 }
 
+/** A Slack channel the bot is a member of. */
+export interface SlackChannel {
+  id: string;
+  /** Without the leading #. */
+  name: string;
+}
+
 /**
  * Outbound Slack operations. Grows as tickets need it;
  * add the method here and to both implementations.
@@ -70,6 +78,8 @@ export interface SlackGateway {
   openModal(triggerId: string, view: unknown): Promise<void>;
   /** Uploads files and shares them in the channel (thread) as one message. Needs the `files:write` scope. */
   uploadFiles(upload: SlackFileUpload): Promise<void>;
+  /** Public and private channels the bot is a member of, by name. Needs `channels:read` and `groups:read`. */
+  listChannels(): Promise<SlackChannel[]>;
 }
 
 /** A column of an uploaded Dataset as stored: engine-independent type plus the store's own type name. */
@@ -103,4 +113,18 @@ export interface UploadStorage {
    */
   writeDataset(datasetId: string, table: TypedTable, mode: 'create' | 'replace' | 'append'): Promise<StoredColumn[] | null>;
   deleteDataset(datasetId: string): Promise<void>;
+}
+
+/**
+ * Runs SQL over earlier query results (combineResults): each result becomes a table named by
+ * its key in a temporary in-memory database that is thrown away afterwards.
+ */
+export interface ResultCombiner {
+  /** Guidance for the model: which SQL flavour to write. */
+  readonly guidance: string;
+  /**
+   * Runs one read-only SELECT/WITH statement. Throws QueryRejectedError (not read-only),
+   * QueryTimeoutError or QueryFailedError (the engine's message, for the model to fix).
+   */
+  combine(tables: Readonly<Record<string, QueryResult>>, sql: string): Promise<QueryResult>;
 }

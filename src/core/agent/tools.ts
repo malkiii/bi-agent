@@ -12,10 +12,15 @@ import type { AnswerDraft } from './answer-draft';
 import { selectColumns, tableBlock } from './answer-draft';
 import type { AgentCatalog, AgentDataSource } from './catalog';
 import type { CatalogDetails } from '../data-sources/data-sources';
+import type { QueryResult } from '../data-sources/driver';
+import { COMBINED_RESULTS } from '../conversations/answer';
+import type { ResultCombiner } from '../ports';
 
 export interface AgentToolContext {
   catalog: AgentCatalog;
   answer: AnswerDraft;
+  /** Runs combineResults; the tool is left out without it. */
+  combiner?: ResultCombiner;
 }
 
 export interface AgentToolkit {
@@ -209,6 +214,70 @@ export const chartToolkit: AgentToolkitFactory = ({ answer }) => ({
   },
 });
 
+export const combineToolkit: AgentToolkitFactory = ({ answer, combiner }): AgentToolkit => {
+  if (!combiner) return { tools: {} };
+  return {
+    instructions:
+      'When the Answer needs data from more than one Data Source, query each with runQuery, then join or union the ' +
+      'results with combineResults. Combine small, already aggregated results where you can.',
+    tools: {
+      combineResults: tool({
+        description:
+          'Run one SQL statement over earlier runQuery or combineResults results of this Answer, e.g. to join results ' +
+          `from different Data Sources. ${combiner.guidance} Returns a resultId, the columns and a preview of the rows.`,
+        inputSchema: z.object({
+          resultIds: z.array(z.string()).min(1).describe('The results to read, each available as a table named by its resultId'),
+          sql: z.string(),
+          name: z.string().optional().describe('A short name for the combined result, e.g. sales_by_manager'),
+        }),
+        execute: async ({ resultIds, sql, name }) => {
+          const unknown = resultIds.filter((id) => !answer.result(id));
+          if (unknown.length > 0) {
+            return { ok: false, error: `Unknown resultIds: ${unknown.join(', ')}. Known: ${answer.resultIds().join(', ') || 'none'}.` };
+          }
+          if (answer.failedQueryCount >= MAX_FAILED_QUERIES) {
+            return { ok: false, error: 'Too many failed queries. Stop querying and tell the user what went wrong.' };
+          }
+          answer.progress('Combining results…');
+          const combines = [...new Set(resultIds)];
+          const inputs = Object.fromEntries(combines.map((id) => [id, answer.result(id)!]));
+          const resultId = answer.newResultId(name);
+          const base = { resultId, ...COMBINED_RESULTS, language: 'sql' as const, query: sql, combines };
+          try {
+            const result = await combineAll(combiner, inputs, sql);
+            answer.recordQuery(
+              { ...base, ok: true, rowCount: result.rows.length, truncated: result.truncated, durationMs: result.durationMs },
+              result,
+            );
+            return {
+              ok: true,
+              resultId,
+              columns: result.columns,
+              rowCount: result.rows.length,
+              truncated: result.truncated,
+              rows: result.rows.slice(0, MODEL_PREVIEW_ROWS),
+            };
+          } catch (error) {
+            if (!(error instanceof AppError)) throw error;
+            answer.recordQuery({ ...base, ok: false, error: error.message, rowCount: 0, truncated: false, durationMs: 0 });
+            return { ok: false, error: error.message, attemptsLeft: MAX_FAILED_QUERIES - answer.failedQueryCount };
+          }
+        },
+      }),
+    },
+  };
+};
+
+/** Runs a combination; a cut-off input makes the combined result incomplete too. */
+export async function combineAll(
+  combiner: ResultCombiner,
+  inputs: Record<string, QueryResult>,
+  sql: string,
+): Promise<QueryResult> {
+  const combined = await combiner.combine(inputs, sql);
+  return { ...combined, truncated: combined.truncated || Object.values(inputs).some((r) => r.truncated) };
+}
+
 /** Vega-Lite's own complaint about a spec, if any. */
 async function compileError(spec: Record<string, unknown>, values: Record<string, unknown>[]): Promise<string | undefined> {
   const { compile } = await import('vega-lite');
@@ -221,7 +290,13 @@ async function compileError(spec: Record<string, unknown>, values: Record<string
   }
 }
 
-export const builtInToolkits: readonly AgentToolkitFactory[] = [catalogToolkit, queryToolkit, emitToolkit, chartToolkit];
+export const builtInToolkits: readonly AgentToolkitFactory[] = [
+  catalogToolkit,
+  queryToolkit,
+  combineToolkit,
+  emitToolkit,
+  chartToolkit,
+];
 
 /** Mongo sources take a structured request; everything else takes the text as-is. */
 export function parseQuery(ds: Pick<AgentDataSource, 'dialect'>, query: string) {

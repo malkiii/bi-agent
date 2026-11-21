@@ -21,7 +21,7 @@ A business term an admin maps to a Dataset or column, e.g. "revenue" means `orde
 _Avoid_: Alias, mapping
 
 **Channel Default**:
-The Data Source the agent prefers for Prompts sent in a particular Slack channel.
+The Data Sources the agent prefers for Prompts sent in a particular Slack channel. It keeps to them while any of them can be queried.
 _Avoid_: Channel binding
 
 ## Conversations

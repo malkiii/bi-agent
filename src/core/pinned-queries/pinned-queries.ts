@@ -11,13 +11,13 @@
  */
 import { selectColumns, tableBlock } from '../agent/answer-draft';
 import { createAgentCatalog } from '../agent/catalog';
-import { datasetsReferenced, parseQuery } from '../agent/tools';
+import { combineAll, datasetsReferenced, parseQuery } from '../agent/tools';
 import { chartBlock, checkChartSpec } from '../charts/chart';
 import type { Answer, AnswerSource, ChartBlock, ChartSpec, ExecutedQuery, ResultBlock, TableBlock, TextBlock } from '../conversations/answer';
 import type { DataSources } from '../data-sources/data-sources';
 import type { QueryResult } from '../data-sources/driver';
 import { AppError, ValidationError } from '../errors';
-import type { Clock } from '../ports';
+import type { Clock, ResultCombiner } from '../ports';
 
 /** One query the agent wrote, stored to be re-executed verbatim. */
 export interface PinnedQuery {
@@ -27,8 +27,10 @@ export interface PinnedQuery {
   /** The Data Source name when it was pinned (for display if the source is gone). */
   dataSourceName: string;
   language: ExecutedQuery['language'];
-  /** Exactly what was sent to the driver (Mongo: the request as JSON). */
+  /** Exactly what was sent to the driver (Mongo: the request as JSON), or the combineResults SQL. */
   query: string;
+  /** A combineResults query: the resultIds it reads. It runs after them, on a temporary DuckDB. */
+  combines?: string[];
 }
 
 /** A Result Block without its data: what it shows and which results it is built from. */
@@ -139,12 +141,13 @@ export function pinAnswer(answer: Answer): PinnedAnswer {
   if (answer.status !== 'complete') throw new ValidationError('A failed Answer cannot be pinned.');
   const queries: PinnedQuery[] = answer.queries
     .filter((q) => q.ok)
-    .map(({ resultId, dataSourceId, dataSourceName, language, query }) => ({
+    .map(({ resultId, dataSourceId, dataSourceName, language, query, combines }) => ({
       resultId,
       dataSourceId,
       dataSourceName,
       language,
       query,
+      ...(combines ? { combines } : {}),
     }));
   const known = new Set(queries.map((q) => q.resultId));
   const layout = answer.blocks.flatMap((block) => {
@@ -159,7 +162,15 @@ export function pinAnswer(answer: Answer): PinnedAnswer {
   return { queries, layout };
 }
 
-export function createPinnedQueries({ dataSources, clock }: { dataSources: DataSources; clock: Clock }): PinnedQueries {
+export function createPinnedQueries({
+  dataSources,
+  clock,
+  combiner,
+}: {
+  dataSources: DataSources;
+  clock: Clock;
+  combiner?: ResultCombiner;
+}): PinnedQueries {
   return {
     pin: pinAnswer,
 
@@ -169,8 +180,8 @@ export function createPinnedQueries({ dataSources, clock }: { dataSources: DataS
       const results: Record<string, QueryResult> = {};
       const sources = new Map<string, AnswerSource>();
 
-      const queries = await Promise.all(
-        pinned.queries.map(async (q): Promise<ExecutedQuery> => {
+      const dataSourceQueries = await Promise.all(
+        pinned.queries.filter((q) => !q.combines).map(async (q): Promise<ExecutedQuery> => {
           const base = { ...q, rowCount: 0, truncated: false, durationMs: 0 };
           const ds = await catalog.dataSource(q.dataSourceId);
           if (!ds) return { ...base, ok: false, error: `The Data Source "${q.dataSourceName}" is no longer available.` };
@@ -186,6 +197,31 @@ export function createPinnedQueries({ dataSources, clock }: { dataSources: DataS
           }
         }),
       );
+
+      // Combinations run in their recorded order, after the queries they read (which may be combinations too).
+      const combined: ExecutedQuery[] = [];
+      for (const q of pinned.queries.filter((p) => p.combines)) {
+        const base = { ...q, rowCount: 0, truncated: false, durationMs: 0 };
+        const missing = q.combines!.find((id) => !results[id]);
+        if (missing) {
+          combined.push({ ...base, ok: false, error: `It reads "${missing}", which has no result.` });
+          continue;
+        }
+        if (!combiner) {
+          combined.push({ ...base, ok: false, error: 'Combining results is not available.' });
+          continue;
+        }
+        try {
+          const inputs = Object.fromEntries(q.combines!.map((id) => [id, results[id]!]));
+          const result = await combineAll(combiner, inputs, q.query);
+          results[q.resultId] = result;
+          combined.push({ ...base, ok: true, rowCount: result.rows.length, truncated: result.truncated, durationMs: result.durationMs });
+        } catch (error) {
+          combined.push({ ...base, ok: false, error: error instanceof AppError ? error.message : 'The query could not be run.' });
+        }
+      }
+      const order = new Map(pinned.queries.map((q, i) => [q.resultId, i]));
+      const queries = [...dataSourceQueries, ...combined].sort((a, b) => order.get(a.resultId)! - order.get(b.resultId)!);
 
       const failedQueries = new Map(queries.filter((q) => !q.ok).map((q) => [q.resultId, q.error ?? 'Failed.']));
       const blocks = pinned.layout.map((p): PinnedRunBlock => {

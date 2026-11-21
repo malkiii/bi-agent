@@ -15,6 +15,7 @@ export const unconfiguredSlack: SlackGateway = {
   isBotInChannel: async () => notYet('SlackGateway'),
   openModal: async () => notYet('SlackGateway'),
   uploadFiles: async () => notYet('SlackGateway'),
+  listChannels: async () => notYet('SlackGateway'),
 };
 
 /** No LLM credentials in the environment: nothing to choose, and Answers fail. */

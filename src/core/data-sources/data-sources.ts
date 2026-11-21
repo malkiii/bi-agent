@@ -588,6 +588,23 @@ function duplicateName(error: unknown): unknown {
   return error;
 }
 
+/** True when the agent can query the Data Source: it has at least one Exposed Dataset. */
+export function hasExposedDatasets(ds: Pick<DataSourceView, 'datasets'>): boolean {
+  return ds.datasets.some((d) => d.exposed);
+}
+
+/** `ids` without duplicates, each an existing Data Source; ValidationError (field `dataSourceIds`) otherwise. */
+export async function existingDataSourceIds(dataSources: DataSources, ids: readonly string[]): Promise<string[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  const known = new Set((await dataSources.list()).map((ds) => ds.id));
+  const unknown = unique.filter((id) => !known.has(id));
+  if (unknown.length > 0) {
+    throw new ValidationError('Choose Data Sources that exist.', { dataSourceIds: `Unknown: ${unknown.join(', ')}` });
+  }
+  return unique;
+}
+
 export async function ensureDataSourceIndexes(db: Db) {
   await db.collection('dataSources').createIndex({ name: 1 }, { unique: true });
   await db.collection('oauthStates').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });

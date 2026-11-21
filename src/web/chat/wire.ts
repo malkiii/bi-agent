@@ -17,6 +17,8 @@ export interface ChatRequest {
   /** Omit to start a new Web Conversation. */
   conversationId?: string;
   prompt: string;
+  /** The Data Sources the Conversation is locked to from this Prompt on; empty for none. Omit to keep the lock. */
+  dataSourceIds?: string[];
 }
 
 /** Splits a stream of NDJSON text into events; keeps a partial last line for the next chunk. */

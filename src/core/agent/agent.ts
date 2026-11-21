@@ -8,6 +8,7 @@ import type { ActiveLanguageModel } from '../llm-settings/llm-settings';
 import type { Answer, AnswerEvent } from '../conversations/answer';
 import { AnswerDraft } from './answer-draft';
 import type { AgentCatalog } from './catalog';
+import type { ResultCombiner } from '../ports';
 import { builtInToolkits, type AgentToolkitFactory } from './tools';
 
 /** Model steps (tool rounds) allowed per Answer. */
@@ -36,12 +37,14 @@ export interface RunAgentInput {
   /** Sees the underlying error of a failed Answer (for logging). */
   onError?: (error: unknown) => void;
   toolkits?: readonly AgentToolkitFactory[];
+  /** For combineResults. */
+  combiner?: ResultCombiner;
 }
 
 /** Never throws for model or tool failures: they produce a `failed` Answer. */
 export async function runAgent(input: RunAgentInput): Promise<Answer> {
   const answer = new AnswerDraft((event) => input.onEvent?.(event), input.now());
-  const kits = (input.toolkits ?? builtInToolkits).map((make) => make({ catalog: input.catalog, answer }));
+  const kits = (input.toolkits ?? builtInToolkits).map((make) => make({ catalog: input.catalog, answer, combiner: input.combiner }));
   const tools: ToolSet = Object.assign({}, ...kits.map((k) => k.tools));
   const instructions = [BASE_INSTRUCTIONS, ...kits.flatMap((k) => (k.instructions ? [k.instructions] : []))].join('\n');
 

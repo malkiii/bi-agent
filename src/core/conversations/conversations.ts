@@ -10,9 +10,9 @@ import type { Db } from 'mongodb';
 import { runAgent } from '../agent/agent';
 import { createAgentCatalog } from '../agent/catalog';
 import type { AgentToolkitFactory } from '../agent/tools';
-import type { DataSources } from '../data-sources/data-sources';
+import { existingDataSourceIds, type DataSources } from '../data-sources/data-sources';
 import { NotFoundError, ValidationError } from '../errors';
-import type { Clock } from '../ports';
+import type { Clock, ResultCombiner } from '../ports';
 import type { ActiveLanguageModel } from '../llm-settings/llm-settings';
 import type { Answer, AnswerEvent } from './answer';
 
@@ -30,6 +30,8 @@ export interface Conversation {
   updatedAt: Date;
   /** Set on a Fork: the Slack Conversation it started from. */
   forkedFrom?: { conversationId: string };
+  /** Web only: the agent may use only these Data Sources. Unset: it chooses among all of them. */
+  lockedDataSourceIds?: string[];
 }
 
 export interface HistoryOptions {
@@ -61,8 +63,14 @@ export interface AskOptions {
 }
 
 export interface Conversations {
-  /** A new, empty Web Conversation started by `actor`. */
-  startWeb(actorSlackUserId: string): Promise<Conversation>;
+  /** A new, empty Web Conversation started by `actor`, optionally locked to some Data Sources (see `lock`). */
+  startWeb(actorSlackUserId: string, options?: { dataSourceIds?: readonly string[] }): Promise<Conversation>;
+  /**
+   * Locks a Web Conversation to these Data Sources: from the next Prompt on, the agent sees and
+   * queries only them. An empty list removes the lock. NotFoundError unless `actor` is a
+   * Participant; ValidationError for a Slack Conversation or an unknown Data Source.
+   */
+  lock(actorSlackUserId: string, conversationId: string, dataSourceIds: readonly string[]): Promise<Conversation>;
   /**
    * Answers `prompt` in a Web Conversation and stores both. Resolves with a `failed` Answer
    * (never rejects) when the agent cannot finish; rejects on access or input errors, and with
@@ -117,6 +125,7 @@ interface ConversationDoc {
   createdAt: Date;
   updatedAt: Date;
   forkedFrom?: { conversationId: string };
+  lockedDataSourceIds?: string[];
 }
 
 type MessageBody =
@@ -132,12 +141,16 @@ interface Deps {
   dataSources: DataSources;
   toolkits?: readonly AgentToolkitFactory[];
   onAgentError?: (error: unknown) => void;
+  /** Runs combineResults (joins across Data Sources); the tool is off without it. */
+  combiner?: ResultCombiner;
+  /** The Channel Default's Data Source ids for a Slack channel, if it has one. */
+  channelDefault?: (channel: string) => Promise<readonly string[] | undefined>;
 }
 
 const TITLE_LENGTH = 80;
 export const MAX_PROMPT_LENGTH = 8_000;
 
-export function createConversations({ db, clock, llm, dataSources, toolkits, onAgentError }: Deps): Conversations {
+export function createConversations({ db, clock, llm, dataSources, toolkits, onAgentError, channelDefault, combiner }: Deps): Conversations {
   const conversations = db.collection<ConversationDoc>('conversations');
   const messages = db.collection<MessageDoc>('conversationMessages');
 
@@ -167,7 +180,8 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
   }
 
   const api: Conversations = {
-    async startWeb(actor) {
+    async startWeb(actor, { dataSourceIds = [] } = {}) {
+      const locked = await existingDataSourceIds(dataSources, dataSourceIds);
       const now = clock.now();
       const doc: ConversationDoc = {
         _id: randomUUID(),
@@ -178,8 +192,19 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
         createdBy: actor,
         createdAt: now,
         updatedAt: now,
+        ...(locked.length > 0 && { lockedDataSourceIds: locked }),
       };
       await conversations.insertOne(doc);
+      return toConversation(doc);
+    },
+
+    async lock(actor, conversationId, dataSourceIds) {
+      const conversation = await loadVisible(actor, conversationId);
+      if (conversation.source.kind !== 'web') throw new ValidationError('Only web Conversations can be locked to Data Sources.');
+      const locked = await existingDataSourceIds(dataSources, dataSourceIds);
+      const update = locked.length > 0 ? { $set: { lockedDataSourceIds: locked } } : { $unset: { lockedDataSourceIds: '' as const } };
+      const doc = await conversations.findOneAndUpdate({ _id: conversation._id }, update, { returnDocument: 'after' });
+      if (!doc) throw new NotFoundError('Conversation not found.');
       return toConversation(doc);
     },
 
@@ -241,9 +266,14 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
         createdAt: clock.now(),
       });
 
+      // Data Source choice: the Conversation lock (web), then the Channel Default (Slack), then the agent's own.
+      const preferred = conversation.source.kind === 'slack' ? await channelDefault?.(conversation.source.channel) : undefined;
       const answer = await runAgent({
         llm,
-        catalog: createAgentCatalog(dataSources),
+        catalog: createAgentCatalog(dataSources, {
+          onlyDataSourceIds: conversation.lockedDataSourceIds,
+          preferredDataSourceIds: preferred,
+        }),
         history: context,
         prompt: text,
         now: () => clock.now(),
@@ -251,6 +281,7 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
         signal: options.signal,
         onError: onAgentError,
         toolkits,
+        combiner,
       });
       const stored = await append(conversation._id, { kind: 'answer', promptId: promptDoc._id, answer, createdAt: clock.now() });
       return { answer, answerMessageId: stored._id };
@@ -328,8 +359,18 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
 }
 
 function toConversation(doc: ConversationDoc): Conversation {
-  const { _id, source, title, participants, createdBy, createdAt, updatedAt, forkedFrom } = doc;
-  return { id: _id, source, title, participants, createdBy, createdAt, updatedAt, ...(forkedFrom ? { forkedFrom } : {}) };
+  const { _id, source, title, participants, createdBy, createdAt, updatedAt, forkedFrom, lockedDataSourceIds } = doc;
+  return {
+    id: _id,
+    source,
+    title,
+    participants,
+    createdBy,
+    createdAt,
+    updatedAt,
+    ...(forkedFrom ? { forkedFrom } : {}),
+    ...(lockedDataSourceIds?.length ? { lockedDataSourceIds } : {}),
+  };
 }
 
 function toMessage(doc: MessageDoc): ConversationMessage {

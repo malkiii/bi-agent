@@ -1,4 +1,4 @@
-import type { SlackFileUpload, SlackGateway, SlackMessage, SlackMessageRef } from '../ports';
+import type { SlackChannel, SlackFileUpload, SlackGateway, SlackMessage, SlackMessageRef } from '../ports';
 
 export interface RecordedMessage extends SlackMessage {
   ts: string;
@@ -20,6 +20,8 @@ export class InMemorySlackGateway implements SlackGateway {
   failUploads = false;
   /** Channels the bot is a member of (DM channel IDs starting with "D" always count). */
   readonly botChannels = new Set<string>();
+  /** Names `listChannels` reports for `botChannels` (default: the id). */
+  readonly channelNames = new Map<string, string>();
   private seq = 0;
 
   async postMessage(message: SlackMessage): Promise<SlackMessageRef> {
@@ -50,6 +52,10 @@ export class InMemorySlackGateway implements SlackGateway {
   async uploadFiles(upload: SlackFileUpload): Promise<void> {
     if (this.failUploads) throw new Error('missing_scope');
     this.uploads.push(upload);
+  }
+
+  async listChannels(): Promise<SlackChannel[]> {
+    return [...this.botChannels].map((id) => ({ id, name: this.channelNames.get(id) ?? id }));
   }
 
   /** Messages posted in one thread (or top-level in a channel when threadTs is omitted). */

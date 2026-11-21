@@ -68,7 +68,16 @@ export interface ExecutedQuery {
   rowCount: number;
   truncated: boolean;
   durationMs: number;
+  /**
+   * Set when this query combined earlier results (`combineResults`): the resultIds it read,
+   * each a table. It ran on a temporary DuckDB, not on a Data Source, so `dataSourceId` and
+   * `dataSourceName` are `COMBINED_RESULTS`.
+   */
+  combines?: string[];
 }
+
+/** The pseudo Data Source of `combineResults` queries. */
+export const COMBINED_RESULTS = { dataSourceId: 'combineResults', dataSourceName: 'Combined results' } as const;
 
 /** A Data Source the Answer used, with the Datasets its queries referred to. */
 export interface AnswerSource {
