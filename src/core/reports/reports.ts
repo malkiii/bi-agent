@@ -21,6 +21,7 @@ import type { SavedQuestions } from '../saved-questions/saved-questions';
 import type { Jobs } from '../scheduler/scheduler';
 import { toMrkdwn } from '../slack/render';
 import type { Users } from '../users/users';
+import { destinationChannel, resolveDestination, type ReportDestination, type ReportDestinationInput } from './destination';
 import { REPORT_TITLE_MAX } from './report-options';
 import { nextRunAt, validateSchedule, type ReportSchedule } from './schedule';
 
@@ -43,8 +44,6 @@ export interface ReportFailure {
   error: string;
   at: Date;
 }
-
-export type ReportDestination = { kind: 'channel'; channel: string } | { kind: 'dm'; slackUserId: string };
 
 /** Where the Report's queries come from: an Answer in a Web Conversation, or a Saved Question. */
 export type ReportOrigin = { kind: 'prompt'; conversationId: string } | { kind: 'savedQuestion'; savedQuestionId: string };
@@ -101,9 +100,6 @@ export interface ReportRun {
 
 /** A past Report Run in a Report's list, without its data. */
 export type ReportRunSummary = Pick<ReportRun, 'id' | 'status' | 'error' | 'scheduledFor' | 'finishedAt' | 'timezone' | 'deliveryError'>;
-
-/** Destination as a form gives it: a channel id, or a DM to the person saving. */
-export type ReportDestinationInput = { kind: 'channel'; channel: string } | { kind: 'dm' };
 
 export interface ReportSettingsInput {
   /** Default: the Prompt (or the Saved Question's title), shortened. */
@@ -173,6 +169,7 @@ interface Deps {
 }
 
 export { REPORT_TITLE_MAX };
+export type { ReportDestination, ReportDestinationInput };
 export const REPORT_JOB = 'report';
 /** Rows of each result the commentary model sees. */
 const COMMENTARY_ROWS = 50;
@@ -218,16 +215,9 @@ export function createReports(deps: Deps): Reports {
       if (!(error instanceof ValidationError)) throw error;
       Object.assign(fieldErrors, error.fieldErrors);
     }
-    let destination: ReportDestination | null = null;
-    if (input.destination.kind === 'dm') {
-      destination = { kind: 'dm', slackUserId: dmTo };
-    } else {
-      const channel = input.destination.channel.trim();
-      if (!channel) fieldErrors.destination = 'Choose a channel.';
-      else if (!(await slack.isBotInChannel(channel))) {
-        fieldErrors.destination = 'Botley is not in that channel. Invite it with /invite @Botley, then save again.';
-      } else destination = { kind: 'channel', channel };
-    }
+    const resolved = await resolveDestination(slack, dmTo, input.destination);
+    if (!resolved.ok) fieldErrors.destination = resolved.error;
+    const destination = resolved.ok ? resolved.destination : null;
     const title = shorten(input.title?.trim() || fallbackTitle);
     if (!title) fieldErrors.title = 'Give the Report a title.';
     if (Object.keys(fieldErrors).length > 0 || !scheduled || !destination) {
@@ -298,9 +288,8 @@ export function createReports(deps: Deps): Reports {
           (needsReapproval ? '\nIt is stopped and needs re-approval: fix its queries, then approve them again.' : '') +
           runLink +
           slackLink(reportPath(report._id), 'Open the Report');
-    const channel = report.destination.kind === 'channel' ? report.destination.channel : report.destination.slackUserId;
     try {
-      await slack.postMessage({ channel, text });
+      await slack.postMessage({ channel: destinationChannel(report.destination), text });
       return undefined;
     } catch (error) {
       deps.onError?.(error);

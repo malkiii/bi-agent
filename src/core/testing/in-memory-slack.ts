@@ -18,6 +18,8 @@ export class InMemorySlackGateway implements SlackGateway {
   readonly uploads: SlackFileUpload[] = [];
   /** Set to make `uploadFiles` reject, like Slack without the `files:write` scope. */
   failUploads = false;
+  /** Channels where `postMessage` rejects, like Slack after the bot was removed. */
+  readonly failPostsTo = new Set<string>();
   /** Channels the bot is a member of (DM channel IDs starting with "D" always count). */
   readonly botChannels = new Set<string>();
   /** Names `listChannels` reports for `botChannels` (default: the id). */
@@ -25,6 +27,7 @@ export class InMemorySlackGateway implements SlackGateway {
   private seq = 0;
 
   async postMessage(message: SlackMessage): Promise<SlackMessageRef> {
+    if (this.failPostsTo.has(message.channel)) throw new Error('not_in_channel');
     const ts = `1700000000.${String(++this.seq).padStart(6, '0')}`;
     this.messages.push({ ...message, ts, history: [] });
     return { channel: message.channel, ts };

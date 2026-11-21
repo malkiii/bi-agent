@@ -23,6 +23,7 @@ import { createSavedQuestions, ensureSavedQuestionIndexes, type SavedQuestions }
 import { createChannelDefaults, type ChannelDefaults } from './channel-defaults/channel-defaults';
 import { createReports, ensureReportIndexes, type Reports } from './reports/reports';
 import { createScheduler, ensureJobIndexes, type Scheduler } from './scheduler/scheduler';
+import { createKpis, ensureKpiIndexes, type Kpis } from './kpis/kpis';
 
 export * from './errors';
 export type * from './ports';
@@ -100,6 +101,9 @@ export type {
   ReportStatus,
 } from './reports/reports';
 export { describeSchedule, MONTHLY_MAX_DAY, WEEKDAYS, type ReportSchedule } from './reports/schedule';
+export { KPI_NAME_MAX, kpiPath } from './kpis/kpis';
+export type { Kpi, KpiAlert, KpiAlertInput, KpiAlertState, KpiAlertStatus, Kpis, KpiStatus, KpiValue } from './kpis/kpis';
+export { describeCondition, formatNumber, type KpiAlertCondition } from './kpis/condition';
 export type { Scheduler } from './scheduler/scheduler';
 
 export interface AppCoreConfig {
@@ -143,6 +147,8 @@ export interface AppCore {
   savedQuestions: SavedQuestions;
   /** Scheduled Prompts whose runs re-execute Pinned Queries; Report Runs are their frozen pages. */
   reports: Reports;
+  /** Named single numbers on Pinned Queries, and the KPI Alerts that watch them. */
+  kpis: Kpis;
   /** Runs due scheduled work (Report Runs); the worker calls `runDue()` on a timer. */
   scheduler: Scheduler;
   uploads: Uploads;
@@ -197,6 +203,18 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     pinnedQueries,
     savedQuestions,
     reports,
+    kpis: createKpis({
+      db: deps.db,
+      clock: deps.clock,
+      users,
+      conversations,
+      pinnedQueries,
+      slack: deps.slack,
+      llm: llmSettings.active,
+      jobs,
+      appUrl: deps.config.appUrl,
+      onError: deps.onAgentError,
+    }),
     scheduler,
     uploads: createUploads({
       db: deps.db,
@@ -218,6 +236,7 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensureSlackBotIndexes(db);
   await ensureSavedQuestionIndexes(db);
   await ensureReportIndexes(db);
+  await ensureKpiIndexes(db);
   await ensureJobIndexes(db);
   await ensureUploadIndexes(db);
 }
