@@ -47,7 +47,7 @@ const optional = z
 const schema = z
   .object({
     MONGO_URL: required('MONGO_URL'),
-    MONGO_DB: z.string().trim().min(1).default('botley'),
+    MONGO_DB: z.string().trim().min(1).default('bibot'),
     UPLOADS_DIR: z.string().trim().min(1).default('data/uploads'),
     SLACK_TEAM_ID: required('SLACK_TEAM_ID'),
     ADMIN_SLACK_USER_IDS: z.string().default(''),
@@ -69,7 +69,7 @@ const schema = z
     OPENAI_COMPATIBLE_NAME: optional,
     SLACK_BOT_TOKEN: optional.refine((v) => !v || v.startsWith('xoxb-'), 'SLACK_BOT_TOKEN must be a bot token (xoxb-…)'),
     SLACK_APP_TOKEN: optional.refine((v) => !v || v.startsWith('xapp-'), 'SLACK_APP_TOKEN must be an app-level token (xapp-…)'),
-    APP_URL: optional.refine((v) => !v || isHttpUrl(v), 'APP_URL must be an http(s) URL, e.g. https://botley.example.com'),
+    APP_URL: optional.refine((v) => !v || isHttpUrl(v), 'APP_URL must be an http(s) URL, e.g. https://bibot.example.com'),
     AUTH_URL: optional,
   })
   .superRefine((e, ctx) => {

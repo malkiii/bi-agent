@@ -1,18 +1,18 @@
 'use client';
 
 import { useActionState, useEffect } from 'react';
-import { useBotley } from '@/web/botley/BotleyProvider';
+import { useBIBot } from '@/web/bibot/BIBotProvider';
 import styles from '@/web/reports/reports.module.css';
 import { approveKpiAction } from './actions';
 
 /** Approves a draft KPI: checks its Answer is a single number and pins the query. */
 export function ApproveKpiButton({ id }: { id: string }) {
   const [state, approve, pending] = useActionState(approveKpiAction, {});
-  const { setBotleyState } = useBotley();
+  const { setBIBotState } = useBIBot();
 
   useEffect(() => {
-    if (state.error) setBotleyState('error');
-  }, [state, setBotleyState]);
+    if (state.error) setBIBotState('error');
+  }, [state, setBIBotState]);
 
   return (
     <form action={approve} className="actions">

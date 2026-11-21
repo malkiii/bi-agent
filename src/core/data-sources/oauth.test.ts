@@ -8,7 +8,7 @@ import { CONTRACT_FIXTURE_OBJECT, startFakeSalesforce, type FakeSalesforce } fro
 const ADMIN = 'UADMIN';
 const OTHER_ADMIN = 'UADMIN2';
 const MEMBER = 'UMEMBER';
-const REDIRECT = 'https://botley.internal/api/admin/data-sources/oauth/callback';
+const REDIRECT = 'https://bibot.internal/api/admin/data-sources/oauth/callback';
 
 let h: TestHarness;
 let sf: FakeSalesforce;
@@ -35,7 +35,7 @@ function salesforceInput(overrides: { clientId?: string; clientSecret?: string }
   };
 }
 
-/** Plays the whole browser round trip: Botley -> Salesforce consent -> callback. */
+/** Plays the whole browser round trip: BIBot -> Salesforce consent -> callback. */
 async function connect(id: string, actor = ADMIN) {
   const { url } = await h.core.dataSources.startOAuth(actor, id, { redirectUri: REDIRECT });
   const code = sf.approve(url);

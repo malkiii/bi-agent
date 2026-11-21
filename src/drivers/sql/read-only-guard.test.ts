@@ -55,7 +55,7 @@ describe('MySQL / MariaDB', () => {
     'FOR UPDATE': 'SELECT * FROM orders FOR UPDATE',
     'FOR SHARE': 'SELECT * FROM orders FOR SHARE',
     'LOCK IN SHARE MODE': 'SELECT * FROM orders LOCK IN SHARE MODE',
-    GET_LOCK: "SELECT GET_LOCK('botley', 10)",
+    GET_LOCK: "SELECT GET_LOCK('bibot', 10)",
     'a DELETE hidden after a backslash-escaped quote': "SELECT 'it\\'s' AS x; DELETE FROM orders",
     'a DELETE hidden after a backtick name': 'SELECT `a``b`; DELETE FROM orders',
     'an executable comment (MySQL runs it)': "SELECT * FROM orders /*! INTO OUTFILE '/tmp/x' */",

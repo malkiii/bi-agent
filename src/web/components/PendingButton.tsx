@@ -2,20 +2,20 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { useFormStatus } from 'react-dom';
-import { useBotley } from '@/web/botley/BotleyProvider';
+import { useBIBot } from '@/web/bibot/BIBotProvider';
 
 /**
- * A submit button that puts Botley in `thinking` while its form's server action runs.
+ * A submit button that puts BIBot in `thinking` while its form's server action runs.
  * Use it inside a <form action={...}>.
  */
 export function PendingButton({ children, className = 'btn' }: { children: ReactNode; className?: string }) {
   const { pending } = useFormStatus();
-  const { setBotleyState, settleBotley } = useBotley();
+  const { setBIBotState, settleBIBot } = useBIBot();
   useEffect(() => {
     if (!pending) return;
-    setBotleyState('thinking');
-    return () => settleBotley();
-  }, [pending, setBotleyState, settleBotley]);
+    setBIBotState('thinking');
+    return () => settleBIBot();
+  }, [pending, setBIBotState, settleBIBot]);
   return (
     <button type="submit" className={className} disabled={pending} aria-busy={pending}>
       {children}

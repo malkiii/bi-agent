@@ -4,7 +4,7 @@ import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 import styles from '@/web/catalog/catalog.module.css';
 
-export const metadata = { title: 'Catalog · Botley' };
+export const metadata = { title: 'Catalog · BIBot' };
 export const dynamic = 'force-dynamic';
 
 /** The Dataset catalog: every Exposed Dataset with its description, columns and Synonyms. */
@@ -19,7 +19,7 @@ export default async function CatalogPage() {
     <div className={styles.stack}>
       <h1>Catalog</h1>
       <p className={styles.muted}>
-        What you can ask Botley about. Synonyms are business terms Botley maps to a Dataset or column.
+        What you can ask BIBot about. Synonyms are business terms BIBot maps to a Dataset or column.
         {isAdmin && ' As an admin you can edit descriptions and Synonyms.'}
       </p>
       {sources.length === 0 && (

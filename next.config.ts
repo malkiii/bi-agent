@@ -18,6 +18,11 @@ const config: NextConfig = {
     '@duckdb/node-api',
     '@duckdb/node-bindings',
   ],
+  // DuckDB's duckdb.node loads libduckdb.so (Linux) / libduckdb.dylib (macOS) from its own folder at
+  // runtime. File tracing only follows the `require` of duckdb.node, so copy the whole platform package.
+  outputFileTracingIncludes: {
+    '/**': ['./node_modules/@duckdb/node-bindings-*/**'],
+  },
   experimental: {
     // The proxy buffers request bodies up to this size; uploads may be 50 MB plus the multipart envelope.
     proxyClientMaxBodySize: '51mb',

@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import { describeSchedule } from '@/core';
-import { Botley } from '@/web/components/Botley';
+import { BIBot } from '@/web/components/BIBot';
 import chat from '@/web/chat/chat.module.css';
 import { requireUser } from '@/web/current-user';
 import styles from '@/web/reports/reports.module.css';
 import { getCore } from '@/web/server-runtime';
 import { formatInZone, statusLabel } from '@/web/reports/format';
 
-export const metadata = { title: 'Reports · Botley' };
+export const metadata = { title: 'Reports · BIBot' };
 export const dynamic = 'force-dynamic';
 
 /** Every Report (they have no owner), with its schedule and next run. */
@@ -24,7 +24,7 @@ export default async function ReportsPage() {
       </header>
       {reports.length === 0 ? (
         <div className={chat.hero}>
-          <Botley rest="empty" size={72} />
+          <BIBot rest="empty" size={72} />
           <p className={chat.muted}>No Reports yet. A Report runs a Prompt on a schedule and posts each Report Run to Slack.</p>
         </div>
       ) : (

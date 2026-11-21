@@ -1,15 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { Botley } from './Botley';
+import { BIBot } from './BIBot';
 
-/** Body of the error boundaries (`error.tsx`): Botley in `error`, a retry and a way home. */
+/** Body of the error boundaries (`error.tsx`): BIBot in `error`, a retry and a way home. */
 export function ErrorPanel({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <section className="card" role="alert">
-      <Botley rest="error" size={120} />
+      <BIBot rest="error" size={120} />
       <h1>Something went wrong</h1>
-      <p>Botley tripped over a wire. Try again, and if it keeps happening tell an admin.</p>
+      <p>BIBot tripped over a wire. Try again, and if it keeps happening tell an admin.</p>
       {error.digest && (
         <p>
           <code>ref: {error.digest}</code>

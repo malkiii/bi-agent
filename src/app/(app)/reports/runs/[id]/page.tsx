@@ -12,7 +12,7 @@ import styles from '@/web/reports/reports.module.css';
 import { PrintButton } from '@/web/reports/PrintButton';
 import { getCore } from '@/web/server-runtime';
 
-export const metadata = { title: 'Report Run · Botley' };
+export const metadata = { title: 'Report Run · BIBot' };
 export const dynamic = 'force-dynamic';
 
 /**

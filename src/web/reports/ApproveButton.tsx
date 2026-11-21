@@ -1,18 +1,18 @@
 'use client';
 
 import { useActionState, useEffect } from 'react';
-import { useBotley } from '@/web/botley/BotleyProvider';
+import { useBIBot } from '@/web/bibot/BIBotProvider';
 import { approveReportAction } from './actions';
 import styles from './reports.module.css';
 
 /** Approves a draft Report (or re-approves a failed one): pins its queries and layout and starts its schedule. */
 export function ApproveButton({ id, reapprove = false }: { id: string; reapprove?: boolean }) {
   const [state, approve, pending] = useActionState(approveReportAction, {});
-  const { setBotleyState } = useBotley();
+  const { setBIBotState } = useBIBot();
 
   useEffect(() => {
-    if (state.error) setBotleyState('error');
-  }, [state, setBotleyState]);
+    if (state.error) setBIBotState('error');
+  }, [state, setBIBotState]);
 
   return (
     <form action={approve} className="actions">

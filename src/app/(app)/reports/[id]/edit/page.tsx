@@ -6,7 +6,7 @@ import { requireUser } from '@/web/current-user';
 import { ReportForm } from '@/web/reports/ReportForm';
 import { getCore } from '@/web/server-runtime';
 
-export const metadata = { title: 'Edit Report · Botley' };
+export const metadata = { title: 'Edit Report · BIBot' };
 export const dynamic = 'force-dynamic';
 
 /** Edit a Report's title, schedule, timezone and destination. Anyone may, as Reports have no owner. */

@@ -74,8 +74,8 @@ export function ChannelDefaultForm({
         <span className={formStyles.help}>
           {channels
             ? channels.length === 0
-              ? 'Botley is not in any channel yet. Invite it with /invite @Botley, then reload.'
-              : 'Only channels Botley has been invited to are listed.'
+              ? 'BIBot is not in any channel yet. Invite it with /invite @BIBot, then reload.'
+              : 'Only channels BIBot has been invited to are listed.'
             : "Slack's channel list could not be loaded, so enter the channel id (channel details > About)."}
         </span>
         {state.fieldErrors?.channel && <span className={formStyles.error}>{state.fieldErrors.channel}</span>}
@@ -98,7 +98,7 @@ export function ChannelDefaultForm({
           </label>
         ))}
         <span className={formStyles.help}>
-          Prompts in this channel only use these Data Sources. If none of them can be queried, Botley chooses among all.
+          Prompts in this channel only use these Data Sources. If none of them can be queried, BIBot chooses among all.
         </span>
         {state.fieldErrors?.dataSourceIds && <span className={formStyles.error}>{state.fieldErrors.dataSourceIds}</span>}
       </fieldset>

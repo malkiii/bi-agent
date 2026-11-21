@@ -3,7 +3,7 @@ import chat from '@/web/chat/chat.module.css';
 import { requireUser } from '@/web/current-user';
 import { KpiForm } from '@/web/kpis/KpiForm';
 
-export const metadata = { title: 'New KPI · Botley' };
+export const metadata = { title: 'New KPI · BIBot' };
 export const dynamic = 'force-dynamic';
 
 export default async function NewKpiPage() {

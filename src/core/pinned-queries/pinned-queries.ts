@@ -1,7 +1,7 @@
 /**
  * Pinned Queries (ADR 0001): an Answer's successful queries and its block layout, stored so
  * they can be re-executed as-is through the drivers and the blocks rebuilt from the fresh
- * results, without asking the LLM again. Saved Questions, Reports and KPIs all build on this.
+ * results, without asking the LLM again. Reports and KPIs both build on this.
  *
  *   const pinned = core.pinnedQueries.pin(answer);   // pure; store `pinned` in your own document
  *   const run = await core.pinnedQueries.run(pinned); // fresh rows, same layout

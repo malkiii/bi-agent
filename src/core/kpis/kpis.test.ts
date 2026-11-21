@@ -20,7 +20,7 @@ beforeEach(async () => {
   pgDb = await createPostgresTestDatabase();
   await pgDb.sql(CONTRACT_FIXTURE_SQL);
   // The harness starts on Monday 2026-01-05 09:00Z.
-  h = await createTestHarness({ config: { slackTeamId: 'T1', adminSlackUserIds: [ADMIN], appUrl: 'https://botley.example' } });
+  h = await createTestHarness({ config: { slackTeamId: 'T1', adminSlackUserIds: [ADMIN], appUrl: 'https://bibot.example' } });
   for (const slackUserId of [ADMIN, MEMBER, OTHER]) {
     await h.core.users.signIn({ slackUserId, slackTeamId: 'T1', name: slackUserId, email: null, image: null });
   }
@@ -170,7 +170,7 @@ describe('KPI Alerts', () => {
     expect(h.slack.messages).toHaveLength(1);
     expect(h.slack.messages[0]).toMatchObject({ channel: CHANNEL });
     expect(h.slack.messages[0]!.text).toContain('Total sales reached *42.75*, above 40 (was 37.75).');
-    expect(h.slack.messages[0]!.text).toContain(`https://botley.example/kpis/${kpi.id}|`);
+    expect(h.slack.messages[0]!.text).toContain(`https://bibot.example/kpis/${kpi.id}|`);
     const prompt = JSON.stringify(h.llm.model.doGenerateCalls.at(-1)!.prompt);
     for (const fact of ['42.75', '40', '37.75']) expect(prompt).toContain(fact);
     expect(await h.core.kpis.getAlert(MEMBER, alert.id)).toMatchObject({ state: 'fired', firedAt: h.clock.now(), lastValue: 42.75 });
@@ -283,7 +283,7 @@ describe('KPI Alerts', () => {
       destination: { kind: 'channel', channel: 'CELSEWHERE' },
     });
     await expect(saving).rejects.toMatchObject({
-      fieldErrors: { condition: expect.any(String), time: expect.any(String), destination: expect.stringContaining('/invite @Botley') },
+      fieldErrors: { condition: expect.any(String), time: expect.any(String), destination: expect.stringContaining('/invite @BIBot') },
     });
   });
 });

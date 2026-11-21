@@ -1,12 +1,12 @@
 import Link from 'next/link';
-import { Botley } from '@/web/components/Botley';
+import { BIBot } from '@/web/components/BIBot';
 import { PendingButton } from '@/web/components/PendingButton';
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 import styles from '../audit/audit.module.css';
 import { deleteConversationAction } from './actions';
 
-export const metadata = { title: 'Conversations · Botley' };
+export const metadata = { title: 'Conversations · BIBot' };
 export const dynamic = 'force-dynamic';
 
 const NOTICES: Record<string, string> = {
@@ -50,7 +50,7 @@ export default async function ConversationsAdminPage({ searchParams }: { searchP
 
       {conversations.length === 0 ? (
         <div className={styles.empty}>
-          <Botley rest="empty" size={80} />
+          <BIBot rest="empty" size={80} />
           <p>{page > 1 ? 'No more Conversations.' : 'No Conversations yet.'}</p>
         </div>
       ) : (

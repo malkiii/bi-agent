@@ -1,42 +1,42 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useBotley } from '@/web/botley/BotleyProvider';
-import type { BotleyState } from '@/web/botley/machine';
-import styles from './Botley.module.css';
+import { useBIBot } from '@/web/bibot/BIBotProvider';
+import type { BIBotState } from '@/web/bibot/machine';
+import styles from './BIBot.module.css';
 
-export type { BotleyState } from '@/web/botley/machine';
+export type { BIBotState } from '@/web/bibot/machine';
 
-const LABELS: Record<BotleyState, string> = {
-  idle: 'Botley is waiting',
-  thinking: 'Botley is thinking',
-  success: 'Botley is happy',
-  error: 'Botley hit a problem',
-  empty: 'Botley found nothing here',
-  sleeping: 'Botley is asleep',
+const LABELS: Record<BIBotState, string> = {
+  idle: 'BIBot is waiting',
+  thinking: 'BIBot is thinking',
+  success: 'BIBot is happy',
+  error: 'BIBot hit a problem',
+  empty: 'BIBot found nothing here',
+  sleeping: 'BIBot is asleep',
 };
 
-/** Line colour inside Botley's yellow body. It stays dark in both themes, like the button text. */
-const LINE = 'var(--botley-line)';
+/** Line colour inside BIBot's yellow body. It stays dark in both themes, like the button text. */
+const LINE = 'var(--bibot-line)';
 
 /**
- * Botley, the animated mascot. It follows the page's Botley store (`useBotley`), so app events
+ * BIBot, the animated mascot. It follows the page's BIBot store (`useBIBot`), so app events
  * can change its mood. `rest` declares this page's resting mood (e.g. `empty`) and renders it on
  * the server too. `state` pins a fixed mood that events can't change.
  */
-export function Botley({ state, rest, size = 160 }: { state?: BotleyState; rest?: BotleyState; size?: number }) {
-  const live = useBotley();
-  const { setBotleyRest } = live;
+export function BIBot({ state, rest, size = 160 }: { state?: BIBotState; rest?: BIBotState; size?: number }) {
+  const live = useBIBot();
+  const { setBIBotRest } = live;
   useEffect(() => {
     if (!rest) return;
-    setBotleyRest(rest);
-    return () => setBotleyRest('idle');
-  }, [rest, setBotleyRest]);
+    setBIBotRest(rest);
+    return () => setBIBotRest('idle');
+  }, [rest, setBIBotRest]);
   // The store shows a cue or sleep when its mood differs from its rest; otherwise show our rest.
   const mood = state ?? (live.state !== live.rest ? live.state : (rest ?? live.state));
   return (
     <svg
-      className={styles.botley}
+      className={styles.bibot}
       data-state={mood}
       width={size}
       height={size}
@@ -50,7 +50,7 @@ export function Botley({ state, rest, size = 160 }: { state?: BotleyState; rest?
         <rect x="28" y="34" width="104" height="84" rx="14" fill="var(--color-yellow)" stroke={LINE} strokeWidth="4" />
         <rect className={styles.arm} x="16" y="64" width="12" height="28" rx="4" fill="var(--color-cyan)" stroke={LINE} strokeWidth="3" />
         <rect className={`${styles.arm} ${styles.armRight}`} x="132" y="64" width="12" height="28" rx="4" fill="var(--color-cyan)" stroke={LINE} strokeWidth="3" />
-        <rect x="42" y="50" width="76" height="44" rx="8" fill="var(--botley-screen)" stroke={LINE} strokeWidth="3" />
+        <rect x="42" y="50" width="76" height="44" rx="8" fill="var(--bibot-screen)" stroke={LINE} strokeWidth="3" />
         <g className={styles.eyes}>
           <Eyes mood={mood} />
         </g>
@@ -62,7 +62,7 @@ export function Botley({ state, rest, size = 160 }: { state?: BotleyState; rest?
   );
 }
 
-function Eyes({ mood }: { mood: BotleyState }) {
+function Eyes({ mood }: { mood: BIBotState }) {
   switch (mood) {
     case 'success':
       return (
@@ -102,7 +102,7 @@ function Eyes({ mood }: { mood: BotleyState }) {
   }
 }
 
-function Mouth({ mood }: { mood: BotleyState }) {
+function Mouth({ mood }: { mood: BIBotState }) {
   const common = { fill: 'none', stroke: LINE, strokeWidth: 4, strokeLinecap: 'round' as const };
   switch (mood) {
     case 'success':
@@ -120,7 +120,7 @@ function Mouth({ mood }: { mood: BotleyState }) {
   }
 }
 
-function Extras({ mood }: { mood: BotleyState }) {
+function Extras({ mood }: { mood: BIBotState }) {
   const text = { fill: 'var(--color-ink)', fontFamily: 'var(--font-mono)', fontWeight: 700 };
   switch (mood) {
     case 'thinking':

@@ -124,15 +124,6 @@ export const LIGHT_CHART_PALETTE: ChartPalette = {
   font: 'Space Grotesk',
 };
 
-export const DARK_CHART_PALETTE: ChartPalette = {
-  background: '#1f1f1f',
-  ink: '#f5f5f0',
-  muted: '#b0b0a8',
-  grid: '#3a3a3a',
-  accents: ACCENTS,
-  font: 'Space Grotesk',
-};
-
 export interface ChartViewOptions {
   palette: ChartPalette;
   /** Pixels, or 'container' to fill the parent (web). */

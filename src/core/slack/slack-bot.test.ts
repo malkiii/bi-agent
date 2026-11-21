@@ -19,7 +19,7 @@ afterAll(() => pgDb.drop());
 let h: TestHarness;
 let warehouseId: string;
 beforeEach(async () => {
-  h = await createTestHarness({ config: { slackTeamId: 'T1', adminSlackUserIds: [ADMIN], appUrl: 'https://botley.example' } });
+  h = await createTestHarness({ config: { slackTeamId: 'T1', adminSlackUserIds: [ADMIN], appUrl: 'https://bibot.example' } });
   await h.core.users.signIn({ slackUserId: ADMIN, slackTeamId: 'T1', name: 'Admin', email: null, image: null });
   const { host, port, database, user, password } = pgDb.connection;
   const ds = await h.core.dataSources.create(ADMIN, {
@@ -258,7 +258,7 @@ describe('"Open in dashboard"', () => {
     const [conversation] = await h.core.conversations.list(ADA);
     const actions = (h.slack.thread(CHANNEL, '100.1')[0]!.blocks as Block[]).find((b) => b.type === 'actions');
     expect(actions?.elements).toContainEqual(
-      expect.objectContaining({ action_id: OPEN_IN_DASHBOARD_ACTION_ID, url: `https://botley.example/chat/fork/${conversation!.id}` }),
+      expect.objectContaining({ action_id: OPEN_IN_DASHBOARD_ACTION_ID, url: `https://bibot.example/chat/fork/${conversation!.id}` }),
     );
   });
 });

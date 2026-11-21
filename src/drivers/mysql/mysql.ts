@@ -405,7 +405,7 @@ export const mysqlKind: DriverKind<z.infer<typeof mysqlConfigSchema>, { password
       label: 'User',
       input: 'text',
       required: true,
-      help: 'Use a read-only user with only SELECT on the tables Botley should see.',
+      help: 'Use a read-only user with only SELECT on the tables BIBot should see.',
     },
     { key: 'password', label: 'Password', input: 'password', secret: true, required: true },
     {

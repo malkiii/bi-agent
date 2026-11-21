@@ -54,10 +54,6 @@ _Avoid_: Continue, copy, branch
 Someone who has sent at least one Prompt in a Conversation. Only Participants can see a Conversation in the dashboard.
 _Avoid_: Member, owner
 
-**Saved Question**:
-A Prompt whose queries are pinned so it can be re-run on demand.
-_Avoid_: Bookmark, favourite, pin
-
 ## Scheduled work
 
 **Pinned Query**:

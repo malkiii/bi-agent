@@ -1,7 +1,6 @@
 /**
- * Reports (ADR 0001): a Prompt run on a schedule. A Report starts as a draft: from a Prompt
- * (the agent answers once, in a Web Conversation the creator can refine) or from a Saved
- * Question. Approving pins the queries and layout and schedules it. Each scheduled run
+ * Reports (ADR 0001): a Prompt run on a schedule. A Report starts as a draft from a Prompt
+ * (the agent answers once, in a Web Conversation the creator can refine). Approving pins the queries and layout and schedules it. Each scheduled run
  * executes the Pinned Queries, asks the LLM only for commentary, stores a frozen Report Run
  * and posts its URL to the destination channel or DM.
  *
@@ -10,7 +9,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { generateText } from 'ai';
-import { BOTLEY_ACTOR, queryEntries, tokenEntries, type AuditRecorder } from '../audit/audit';
+import { BIBOT_ACTOR, queryEntries, tokenEntries, type AuditRecorder } from '../audit/audit';
 import type { Db } from 'mongodb';
 import type { AnswerSource, ExecutedQuery } from '../conversations/answer';
 import type { AskOptions, ConversationMessage, Conversations } from '../conversations/conversations';
@@ -18,7 +17,6 @@ import { NotFoundError, ValidationError } from '../errors';
 import type { ActiveLanguageModel } from '../llm-settings/llm-settings';
 import type { PinnedAnswer, PinnedQueries, PinnedRunBlock } from '../pinned-queries/pinned-queries';
 import type { Clock, SlackChannel, SlackGateway } from '../ports';
-import type { SavedQuestions } from '../saved-questions/saved-questions';
 import type { Jobs } from '../scheduler/scheduler';
 import { toMrkdwn } from '../slack/render';
 import type { Users } from '../users/users';
@@ -46,8 +44,8 @@ export interface ReportFailure {
   at: Date;
 }
 
-/** Where the Report's queries come from: an Answer in a Web Conversation, or a Saved Question. */
-export type ReportOrigin = { kind: 'prompt'; conversationId: string } | { kind: 'savedQuestion'; savedQuestionId: string };
+/** Where the Report's queries come from: an Answer in a Web Conversation. */
+export type ReportOrigin = { kind: 'prompt'; conversationId: string };
 
 export interface Report {
   id: string;
@@ -103,7 +101,7 @@ export interface ReportRun {
 export type ReportRunSummary = Pick<ReportRun, 'id' | 'status' | 'error' | 'scheduledFor' | 'finishedAt' | 'timezone' | 'deliveryError'>;
 
 export interface ReportSettingsInput {
-  /** Default: the Prompt (or the Saved Question's title), shortened. */
+  /** Default: the Prompt, shortened. */
   title?: string;
   schedule: ReportSchedule;
   timezone: string;
@@ -120,14 +118,11 @@ export interface Reports {
     input: ReportSettingsInput & { prompt: string; dataSourceIds?: readonly string[] },
     options?: AskOptions,
   ): Promise<Report>;
-  /** A draft whose queries will come from a Saved Question the actor can see (NotFoundError otherwise). */
-  createFromSavedQuestion(actorSlackUserId: string, input: ReportSettingsInput & { savedQuestionId: string }): Promise<Report>;
   get(actorSlackUserId: string, id: string): Promise<Report>;
   /** Every Report, most recently updated first. */
   list(actorSlackUserId: string): Promise<Report[]>;
   /**
-   * Pins the queries (the latest complete Answer of the origin Conversation, or the Saved
-   * Question's Pinned Queries), activates the Report and schedules its next run. The actor must
+   * Pins the queries (the latest complete Answer of the origin Conversation), activates the Report and schedules its next run. The actor must
    * be able to see the origin (NotFoundError); ValidationError when there is nothing to pin or the
    * Report is neither a draft nor needs re-approval.
    */
@@ -163,7 +158,6 @@ interface Deps {
   slack: SlackGateway;
   llm: ActiveLanguageModel;
   conversations: Conversations;
-  savedQuestions: SavedQuestions;
   pinnedQueries: PinnedQueries;
   jobs: Jobs;
   /** The web app's URL; Report Run links point at it. */
@@ -189,7 +183,7 @@ export function reportPath(reportId: string): string {
 }
 
 export function createReports(deps: Deps): Reports {
-  const { db, clock, users, slack, conversations, savedQuestions, pinnedQueries, jobs, audit } = deps;
+  const { db, clock, users, slack, conversations, pinnedQueries, jobs, audit } = deps;
   const reports = db.collection<ReportDoc>('reports');
   const runs = db.collection<ReportRunDoc>('reportRuns');
 
@@ -257,7 +251,6 @@ export function createReports(deps: Deps): Reports {
   }
 
   async function pinnedFromOrigin(actor: string, origin: ReportOrigin): Promise<PinnedAnswer> {
-    if (origin.kind === 'savedQuestion') return (await savedQuestions.get(actor, origin.savedQuestionId)).pinned;
     const { messages } = await conversations.get(actor, origin.conversationId);
     const answer = approvableAnswer(messages);
     if (!answer) throw new ValidationError('The agent has no complete Answer to approve yet.');
@@ -275,7 +268,7 @@ export function createReports(deps: Deps): Reports {
         prompt: `Report: ${report.title}\nIts Prompt: ${report.prompt}\n\n${describeData(blocks)}`,
       });
       await audit.record(
-        ...tokenEntries(BOTLEY_ACTOR, usage, await deps.llm.choice(), 'report_commentary', { kind: 'report', id: report._id }),
+        ...tokenEntries(BIBOT_ACTOR, usage, await deps.llm.choice(), 'report_commentary', { kind: 'report', id: report._id }),
       );
       return text.trim() || null;
     } catch (error) {
@@ -318,7 +311,7 @@ export function createReports(deps: Deps): Reports {
     const report = await reports.findOne({ _id: reportId });
     if (report?.status !== 'active' || !report.pinned) return null;
     const result = await pinnedQueries.run(report.pinned);
-    await audit.record(...queryEntries(BOTLEY_ACTOR, result.queries, { kind: 'report', id: reportId }));
+    await audit.record(...queryEntries(BIBOT_ACTOR, result.queries, { kind: 'report', id: reportId }));
     const commentary = result.status === 'complete' ? await commentaryFor(report, result.blocks) : null;
     const run: ReportRunDoc = {
       _id: randomUUID(),
@@ -367,16 +360,6 @@ export function createReports(deps: Deps): Reports {
       const conversation = await conversations.startWeb(actor, { dataSourceIds: input.dataSourceIds });
       await conversations.ask(actor, conversation.id, prompt, options);
       return insertDraft(actor, { ...settings, prompt, origin: { kind: 'prompt', conversationId: conversation.id } });
-    },
-
-    async createFromSavedQuestion(actor, input) {
-      const question = await savedQuestions.get(actor, input.savedQuestionId);
-      const settings = await settingsOf(actor, input, question.title);
-      return insertDraft(actor, {
-        ...settings,
-        prompt: question.prompt,
-        origin: { kind: 'savedQuestion', savedQuestionId: question.id },
-      });
     },
 
     async get(_actor, id) {

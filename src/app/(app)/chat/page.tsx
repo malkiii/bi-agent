@@ -1,12 +1,12 @@
 import Link from 'next/link';
-import { Botley } from '@/web/components/Botley';
+import { BIBot } from '@/web/components/BIBot';
 import { ChatView } from '@/web/chat/ChatView';
 import styles from '@/web/chat/chat.module.css';
 import { chatDataSources } from '@/web/chat/data-sources';
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 
-export const metadata = { title: 'Chat · Botley' };
+export const metadata = { title: 'Chat · BIBot' };
 
 /** New web chat: a big prompt box, with the person's recent Conversations below. */
 export default async function NewChatPage() {
@@ -19,7 +19,7 @@ export default async function NewChatPage() {
   return (
     <div className={styles.page}>
       <header className={styles.hero}>
-        <Botley size={96} />
+        <BIBot size={96} />
         <h1>What do you want to know?</h1>
       </header>
       <ChatView initialItems={[]} dataSources={dataSources} />

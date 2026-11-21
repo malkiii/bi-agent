@@ -20,7 +20,7 @@ export default async function ChannelDefaultsPage() {
     <section className="card">
       <h1>Channel Defaults</h1>
       <p className={styles.muted}>
-        Choose the Data Sources Botley uses for Prompts in a Slack channel, so Prompts in #finance go to the finance
+        Choose the Data Sources BIBot uses for Prompts in a Slack channel, so Prompts in #finance go to the finance
         database. Channels without one, and DMs, can use every Data Source.
       </p>
 

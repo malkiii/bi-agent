@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { ChartBlock } from '../conversations/answer';
-import { DARK_CHART_PALETTE, LIGHT_CHART_PALETTE } from './chart';
+import { LIGHT_CHART_PALETTE } from './chart';
 import { renderChartPng } from './png';
 
 const DATA = [
@@ -59,15 +59,16 @@ describe('renderChartPng', () => {
     expect(height).toBeGreaterThan(300);
   });
 
-  test('applies the theme: the background is the palette background', async () => {
+  test('applies the palette: the background is the palette background', async () => {
     const spec = { mark: 'bar', encoding: xy };
-    const [light, dark] = await Promise.all([
+    const custom = { ...LIGHT_CHART_PALETTE, background: '#1f1f1f' };
+    const [light, other] = await Promise.all([
       renderChartPng(block('bar', spec)),
-      renderChartPng(block('bar', spec), { palette: DARK_CHART_PALETTE }),
+      renderChartPng(block('bar', spec), { palette: custom }),
     ]);
 
     expect(await cornerPixel(light)).toEqual(hex(LIGHT_CHART_PALETTE.background));
-    expect(await cornerPixel(dark)).toEqual(hex(DARK_CHART_PALETTE.background));
+    expect(await cornerPixel(other)).toEqual(hex(custom.background));
   });
 
   test('renders a chart with no rows', async () => {

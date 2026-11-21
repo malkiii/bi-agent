@@ -3,15 +3,10 @@
 import { useActionState, useEffect, useState } from 'react';
 import type { ReportDestination, ReportSchedule, SlackChannel } from '@/core';
 import { MONTHLY_MAX_DAY, REPORT_TITLE_MAX, WEEKDAYS } from '@/core/reports/report-options';
-import { useBotley } from '@/web/botley/BotleyProvider';
+import { useBIBot } from '@/web/bibot/BIBotProvider';
 import formStyles from '@/web/components/DataSourceForm.module.css';
 import { createReportAction, updateReportAction } from './actions';
 import styles from './reports.module.css';
-
-export interface SavedQuestionOption {
-  id: string;
-  title: string;
-}
 
 type ScheduleKind = 'daily' | 'weekly' | 'monthly' | 'cron';
 
@@ -27,29 +22,23 @@ export interface EditableReport {
 }
 
 /**
- * New Report: where its queries come from (a Prompt the agent answers now, or a Saved Question),
- * its schedule (preset or cron, in a timezone that defaults to the browser's) and destination.
+ * New Report: the Prompt the agent answers now, its schedule (preset or cron, in a timezone that defaults to the browser's) and destination.
  * With `report`, edits that Report's title, schedule, timezone and destination instead.
  */
 export function ReportForm({
-  savedQuestions = [],
   channels,
-  initialSavedQuestionId,
   report,
 }: {
-  savedQuestions?: SavedQuestionOption[];
   /** Null when Slack's channel list could not be loaded. */
   channels: SlackChannel[] | null;
-  initialSavedQuestionId?: string;
   report?: EditableReport;
 }) {
   const [state, save, saving] = useActionState(report ? updateReportAction : createReportAction, {});
-  const [source, setSource] = useState<'prompt' | 'savedQuestion'>(initialSavedQuestionId ? 'savedQuestion' : 'prompt');
   const schedule = report?.schedule;
   const [scheduleKind, setScheduleKind] = useState<ScheduleKind>(schedule?.kind ?? 'weekly');
   const [destinationKind, setDestinationKind] = useState<'channel' | 'dm'>(report?.destination.kind ?? 'channel');
   const [timezone, setTimezone] = useState(report?.timezone ?? 'UTC');
-  const { setBotleyState } = useBotley();
+  const { setBIBotState } = useBIBot();
   const errors = state.fieldErrors ?? {};
   const editing = report !== undefined;
   const initialChannel = report?.destination.kind === 'channel' ? report.destination.channel : '';
@@ -62,57 +51,20 @@ export function ReportForm({
   }, [editing]);
 
   useEffect(() => {
-    if (saving) setBotleyState('thinking');
-    else if (state.message) setBotleyState('error');
-  }, [saving, state, setBotleyState]);
+    if (saving) setBIBotState('thinking');
+    else if (state.message) setBIBotState('error');
+  }, [saving, state, setBIBotState]);
 
   return (
     <form action={save} className={formStyles.form}>
       {report && <input type="hidden" name="id" value={report.id} />}
       {!editing && (
-        <>
-          <fieldset className={styles.fieldset}>
-            <legend className={formStyles.label}>Queries from</legend>
-            <label className={styles.option}>
-              <input type="radio" name="queriesFrom" value="prompt" checked={source === 'prompt'} onChange={() => setSource('prompt')} /> A
-              new Prompt
-            </label>
-            <label className={styles.option}>
-              <input
-                type="radio"
-                name="queriesFrom"
-                value="savedQuestion"
-                checked={source === 'savedQuestion'}
-                onChange={() => setSource('savedQuestion')}
-                disabled={savedQuestions.length === 0}
-              />{' '}
-              A Saved Question
-            </label>
-          </fieldset>
-
-          {source === 'prompt' ? (
-            <label className={formStyles.field}>
-              <span className={formStyles.label}>Prompt</span>
-              <textarea name="prompt" rows={3} required className={formStyles.input} placeholder="Weekly sales by region, with a chart" />
-              <span className={formStyles.help}>Botley answers it once. You check the Answer, then approve it to pin its queries.</span>
-              {errors.prompt && <span className={formStyles.error}>{errors.prompt}</span>}
-            </label>
-          ) : (
-            <label className={formStyles.field}>
-              <span className={formStyles.label}>Saved Question</span>
-              <select name="savedQuestionId" defaultValue={initialSavedQuestionId ?? ''} required className={formStyles.input}>
-                <option value="" disabled>
-                  Choose a Saved Question…
-                </option>
-                {savedQuestions.map((q) => (
-                  <option key={q.id} value={q.id}>
-                    {q.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </>
+        <label className={formStyles.field}>
+          <span className={formStyles.label}>Prompt</span>
+          <textarea name="prompt" rows={3} required className={formStyles.input} placeholder="Weekly sales by region, with a chart" />
+          <span className={formStyles.help}>BIBot answers it once. You check the Answer, then approve it to pin its queries.</span>
+          {errors.prompt && <span className={formStyles.error}>{errors.prompt}</span>}
+        </label>
       )}
 
       <label className={formStyles.field}>
@@ -267,8 +219,8 @@ export function ReportForm({
           <span className={formStyles.help}>
             {channels
               ? channels.length === 0
-                ? 'Botley is not in any channel yet. Invite it with /invite @Botley, then reload.'
-                : 'Only channels Botley has been invited to are listed.'
+                ? 'BIBot is not in any channel yet. Invite it with /invite @BIBot, then reload.'
+                : 'Only channels BIBot has been invited to are listed.'
               : "Slack's channel list could not be loaded, so enter the channel id (channel details > About)."}
           </span>
         )}
@@ -279,7 +231,7 @@ export function ReportForm({
 
       <div className={formStyles.actions}>
         <button type="submit" className="btn" disabled={saving}>
-          {saving ? (source === 'prompt' && !editing ? 'Botley is answering…' : 'Saving…') : editing ? 'Save changes' : 'Create Report'}
+          {saving ? (!editing ? 'BIBot is answering…' : 'Saving…') : editing ? 'Save changes' : 'Create Report'}
         </button>
       </div>
     </form>

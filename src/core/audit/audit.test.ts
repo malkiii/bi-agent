@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { createTestHarness, type TestHarness } from '@/core/testing';
-import { BOTLEY_ACTOR, ForbiddenError, NotFoundError, type AuditEventType, type AuditFilter } from '@/core';
+import { BIBOT_ACTOR, ForbiddenError, NotFoundError, type AuditEventType, type AuditFilter } from '@/core';
 import { CONTRACT_FIXTURE_SQL, createPostgresTestDatabase, type PostgresTestDatabase } from '@/drivers/postgres/testing';
 
 const ADMIN = 'UADMIN';
@@ -147,7 +147,7 @@ describe('scheduled work', () => {
   const WEEKLY = { schedule: { kind: 'weekly', weekday: 1, time: '09:00' }, timezone: 'UTC' } as const;
   const CHANNEL = 'CREPORTS';
 
-  test('Report changes are recorded; its runs record their queries and commentary tokens as Botley', async () => {
+  test('Report changes are recorded; its runs record their queries and commentary tokens as BIBot', async () => {
     h.slack.botChannels.add(CHANNEL);
     scriptAnswer();
     const draft = await h.core.reports.createFromPrompt(MEMBER, {
@@ -174,9 +174,9 @@ describe('scheduled work', () => {
       actor: MEMBER,
       target: { id: draft.id },
     });
-    const botley = await entries({ actor: BOTLEY_ACTOR });
-    expect(botley.map((e) => e.type).sort()).toEqual(['query', 'tokens']);
-    expect(botley).toContainEqual(
+    const bibot = await entries({ actor: BIBOT_ACTOR });
+    expect(bibot.map((e) => e.type).sort()).toEqual(['query', 'tokens']);
+    expect(bibot).toContainEqual(
       expect.objectContaining({ type: 'tokens', details: expect.objectContaining({ purpose: 'report_commentary' }) }),
     );
   });

@@ -19,7 +19,7 @@ export async function resolveDestination(
   const channel = input.channel.trim();
   if (!channel) return { ok: false, error: 'Choose a channel.' };
   if (!(await slack.isBotInChannel(channel))) {
-    return { ok: false, error: 'Botley is not in that channel. Invite it with /invite @Botley, then save again.' };
+    return { ok: false, error: 'BIBot is not in that channel. Invite it with /invite @BIBot, then save again.' };
   }
   return { ok: true, destination: { kind: 'channel', channel } };
 }

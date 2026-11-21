@@ -94,7 +94,7 @@ export function UploadForm({ existingDatasets, maxBytes }: { existingDatasets: s
         return;
       }
       setPreview(null);
-      setNotice(`Saved ${result.datasetIds.join(', ')}. You can ask Botley about it now.`);
+      setNotice(`Saved ${result.datasetIds.join(', ')}. You can ask BIBot about it now.`);
       router.refresh();
     });
   }

@@ -488,7 +488,7 @@ export const salesforceKind: DriverKind<SalesforceConfig, SalesforceSecrets> = {
       required: true,
       help:
         'From an External Client App with OAuth enabled, PKCE required, scopes "api refresh_token" and the ' +
-        'callback URL <your Botley URL>/api/admin/data-sources/oauth/callback. Connect as a read-only integration user.',
+        'callback URL <your BIBot URL>/api/admin/data-sources/oauth/callback. Connect as a read-only integration user.',
     },
     { key: 'clientSecret', label: 'Consumer secret', input: 'password', secret: true, required: true },
     { key: 'apiVersion', label: 'API version', input: 'text', defaultValue: SALESFORCE_API_VERSION },

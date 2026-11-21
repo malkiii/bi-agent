@@ -268,7 +268,7 @@ export function createDataSources({ db, clock, users, drivers, secretBox, audit 
     async create(actor, input) {
       await users.requireAdmin(actor);
       const { name, kind, config, secrets } = validate(input);
-      if (kind.managed) throw managedError(kind.label, { kind: 'Managed by Botley' });
+      if (kind.managed) throw managedError(kind.label, { kind: 'Managed by BIBot' });
       const now = clock.now();
       const doc: DataSourceDoc = {
         _id: randomUUID(),
@@ -509,11 +509,11 @@ export function mergeCatalogDataset(
 }
 
 /** The actor recorded on Data Sources the App Core maintains itself. */
-const MANAGED_BY = 'botley';
+const MANAGED_BY = 'bibot';
 
 function managedError(label: string, fieldErrors?: Record<string, string>) {
   return new ValidationError(
-    `The ${label} Data Source is maintained by Botley and cannot be added, edited or deleted here.`,
+    `The ${label} Data Source is maintained by BIBot and cannot be added, edited or deleted here.`,
     fieldErrors,
   );
 }
@@ -575,7 +575,7 @@ export function createManagedDataSources({ db, clock, secretBox }: Pick<Deps, 'd
         const raced = await collection.findOne({ kind });
         if (raced) return view(raced);
         if (error instanceof MongoServerError && error.code === 11000) {
-          throw new ValidationError(`Rename the Data Source "${name}": Botley needs that name for its ${kind} Data Source.`);
+          throw new ValidationError(`Rename the Data Source "${name}": BIBot needs that name for its ${kind} Data Source.`);
         }
         throw error;
       }

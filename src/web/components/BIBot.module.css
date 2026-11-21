@@ -1,4 +1,4 @@
-.botley {
+.bibot {
   display: block;
   overflow: visible;
 }
@@ -21,96 +21,96 @@
 }
 
 /* idle: gentle bob, blink, glowing antenna. */
-.botley[data-state='idle'] .body {
+.bibot[data-state='idle'] .body {
   animation: bob 2.4s ease-in-out infinite;
 }
-.botley[data-state='idle'] .shadow {
+.bibot[data-state='idle'] .shadow {
   animation: shadow 2.4s ease-in-out infinite;
 }
-.botley[data-state='idle'] .eyes {
+.bibot[data-state='idle'] .eyes {
   animation: blink 4s infinite;
 }
-.botley[data-state='idle'] .antenna {
+.bibot[data-state='idle'] .antenna {
   animation: glow 2.4s ease-in-out infinite;
 }
 
 /* thinking: eyes scan, antenna pulses, thought dots bounce. */
-.botley[data-state='thinking'] .eyes {
+.bibot[data-state='thinking'] .eyes {
   animation: scan 1.6s ease-in-out infinite;
 }
-.botley[data-state='thinking'] .antenna {
+.bibot[data-state='thinking'] .antenna {
   fill: var(--color-cyan);
   animation: pulse 0.8s ease-in-out infinite;
 }
-.botley[data-state='thinking'] .dots circle {
+.bibot[data-state='thinking'] .dots circle {
   animation: dot 1.2s ease-in-out infinite;
 }
-.botley[data-state='thinking'] .dots circle:nth-child(2) {
+.bibot[data-state='thinking'] .dots circle:nth-child(2) {
   animation-delay: 0.2s;
 }
-.botley[data-state='thinking'] .dots circle:nth-child(3) {
+.bibot[data-state='thinking'] .dots circle:nth-child(3) {
   animation-delay: 0.4s;
 }
 
 /* success: hop with waving arms and twinkling sparkles. */
-.botley[data-state='success'] .body {
+.bibot[data-state='success'] .body {
   animation: hop 0.7s ease-out infinite;
 }
-.botley[data-state='success'] .shadow {
+.bibot[data-state='success'] .shadow {
   animation: shadow-hop 0.7s ease-out infinite;
 }
-.botley[data-state='success'] .antenna {
+.bibot[data-state='success'] .antenna {
   fill: var(--color-lime);
 }
-.botley[data-state='success'] .arm {
+.bibot[data-state='success'] .arm {
   transform-origin: top;
   animation: wave-left 0.7s ease-in-out infinite;
 }
-.botley[data-state='success'] .armRight {
+.bibot[data-state='success'] .armRight {
   animation-name: wave-right;
 }
-.botley[data-state='success'] .sparkles path {
+.bibot[data-state='success'] .sparkles path {
   animation: twinkle 0.9s ease-in-out infinite alternate;
 }
-.botley[data-state='success'] .sparkles path:nth-child(2) {
+.bibot[data-state='success'] .sparkles path:nth-child(2) {
   animation-delay: 0.3s;
 }
 
 /* error: shake, red blinking antenna. */
-.botley[data-state='error'] .body {
+.bibot[data-state='error'] .body {
   animation: shake 0.5s ease-in-out 3, sag 0.4s ease-out 1.5s forwards;
 }
-.botley[data-state='error'] .antenna {
+.bibot[data-state='error'] .antenna {
   fill: var(--color-danger);
   animation: alarm 0.6s steps(2, jump-none) infinite;
 }
 
 /* empty: tilts its head, looking around, question mark floats. */
-.botley[data-state='empty'] .body {
+.bibot[data-state='empty'] .body {
   animation: tilt 3s ease-in-out infinite;
 }
-.botley[data-state='empty'] .eyes {
+.bibot[data-state='empty'] .eyes {
   animation: look 3s ease-in-out infinite;
 }
-.botley[data-state='empty'] .question {
+.bibot[data-state='empty'] .question {
   animation: float 2s ease-in-out infinite;
 }
 
 /* sleeping: slow breathing, dim antenna, drifting Zs. */
-.botley[data-state='sleeping'] .body {
+.bibot[data-state='sleeping'] .body {
   animation: breathe 3.6s ease-in-out infinite;
 }
-.botley[data-state='sleeping'] .antenna {
+.bibot[data-state='sleeping'] .antenna {
   fill: var(--color-muted);
 }
-.botley[data-state='sleeping'] .zzz text {
+.bibot[data-state='sleeping'] .zzz text {
   opacity: 0;
   animation: drift 3s ease-in infinite;
 }
-.botley[data-state='sleeping'] .zzz text:nth-child(2) {
+.bibot[data-state='sleeping'] .zzz text:nth-child(2) {
   animation-delay: 1s;
 }
-.botley[data-state='sleeping'] .zzz text:nth-child(3) {
+.bibot[data-state='sleeping'] .zzz text:nth-child(3) {
   animation-delay: 2s;
 }
 
@@ -321,12 +321,12 @@
 
 /* Reduced motion: no animation. Each state still reads from its face and props alone. */
 @media (prefers-reduced-motion: reduce) {
-  .botley,
-  .botley * {
+  .bibot,
+  .bibot * {
     animation: none !important;
     transition: none !important;
   }
-  .botley[data-state='sleeping'] .zzz text {
+  .bibot[data-state='sleeping'] .zzz text {
     opacity: 1;
   }
 }

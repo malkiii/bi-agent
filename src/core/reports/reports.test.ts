@@ -23,7 +23,7 @@ beforeEach(async () => {
   pgDb = await createPostgresTestDatabase();
   await pgDb.sql(CONTRACT_FIXTURE_SQL);
   // The harness starts on Monday 2026-01-05 09:00Z, just after this week's 08:00Z run.
-  h = await createTestHarness({ config: { slackTeamId: 'T1', adminSlackUserIds: [ADMIN], appUrl: 'https://botley.example' } });
+  h = await createTestHarness({ config: { slackTeamId: 'T1', adminSlackUserIds: [ADMIN], appUrl: 'https://bibot.example' } });
   for (const slackUserId of [ADMIN, MEMBER, OTHER]) {
     await h.core.users.signIn({ slackUserId, slackTeamId: 'T1', name: slackUserId, email: null, image: null });
   }
@@ -107,7 +107,7 @@ describe('creating a Report', () => {
     });
 
     await expect(saving).rejects.toThrow(ValidationError);
-    await expect(saving).rejects.toMatchObject({ fieldErrors: { destination: expect.stringContaining('/invite @Botley') } });
+    await expect(saving).rejects.toMatchObject({ fieldErrors: { destination: expect.stringContaining('/invite @BIBot') } });
     expect(h.llm.model.doStreamCalls).toHaveLength(0);
     expect(await h.core.reports.list(MEMBER)).toEqual([]);
   });
@@ -144,57 +144,11 @@ describe('creating a Report', () => {
     await expect(h.core.reports.approve(OTHER, draft.id)).rejects.toThrow(NotFoundError);
     expect(await h.core.reports.get(OTHER, draft.id)).toMatchObject({ status: 'draft' });
   });
-
-  test('from a Saved Question: approving pins its queries without asking the agent', async () => {
-    const draft = await draftFromPrompt();
-    const { conversationId } = draft.origin as { conversationId: string };
-    const { messages } = await h.core.conversations.get(MEMBER, conversationId);
-    const question = await h.core.savedQuestions.save(MEMBER, {
-      conversationId,
-      answerMessageId: messages[1]!.id,
-      title: 'Regional sales',
-      visibility: 'shared',
-    });
-    const streamed = h.llm.model.doStreamCalls.length;
-
-    const fromQuestion = await h.core.reports.createFromSavedQuestion(OTHER, {
-      savedQuestionId: question.id,
-      schedule: { kind: 'daily', time: '18:00' },
-      timezone: 'UTC',
-      destination: { kind: 'channel', channel: CHANNEL },
-    });
-    expect(fromQuestion).toMatchObject({
-      title: 'Regional sales',
-      prompt: 'Sales by region',
-      status: 'draft',
-      origin: { kind: 'savedQuestion', savedQuestionId: question.id },
-    });
-
-    const approved = await h.core.reports.approve(OTHER, fromQuestion.id);
-
-    expect(h.llm.model.doStreamCalls).toHaveLength(streamed);
-    expect(approved).toMatchObject({ status: 'active', pinned: question.pinned, nextRunAt: new Date('2026-01-05T18:00:00Z') });
-  });
-
-  test('a private Saved Question can only become a Report for its owner', async () => {
-    const draft = await draftFromPrompt();
-    const { conversationId } = draft.origin as { conversationId: string };
-    const { messages } = await h.core.conversations.get(MEMBER, conversationId);
-    const question = await h.core.savedQuestions.save(MEMBER, { conversationId, answerMessageId: messages[1]!.id });
-
-    await expect(
-      h.core.reports.createFromSavedQuestion(OTHER, {
-        savedQuestionId: question.id,
-        ...WEEKLY,
-        destination: { kind: 'dm' },
-      }),
-    ).rejects.toThrow(NotFoundError);
-  });
 });
 
 /** The Report Run id from the link in a posted Slack message. */
 function runIdIn(text: string): string {
-  const match = /https:\/\/botley\.example\/reports\/runs\/([\w-]+)\|/.exec(text);
+  const match = /https:\/\/bibot\.example\/reports\/runs\/([\w-]+)\|/.exec(text);
   if (!match) throw new Error(`No Report Run link in: ${text}`);
   return match[1]!;
 }
@@ -313,7 +267,7 @@ describe('a failed Report Run', () => {
 
     const text = h.slack.messages[0]!.text;
     expect(text).toContain('needs re-approval');
-    expect(text).toContain(`https://botley.example/reports/${report.id}|`);
+    expect(text).toContain(`https://bibot.example/reports/${report.id}|`);
     expect(await h.core.reports.get(OTHER, report.id)).toMatchObject({
       status: 'needsReapproval',
       nextRunAt: null,
@@ -388,7 +342,7 @@ describe('maintaining a Report', () => {
 
     await expect(
       h.core.reports.update(OTHER, report.id, { ...WEEKLY, destination: { kind: 'channel', channel: 'CELSEWHERE' } }),
-    ).rejects.toMatchObject({ fieldErrors: { destination: expect.stringContaining('/invite @Botley') } });
+    ).rejects.toMatchObject({ fieldErrors: { destination: expect.stringContaining('/invite @BIBot') } });
 
     const edited = await h.core.reports.update(OTHER, report.id, { ...WEEKLY, destination: { kind: 'dm' } });
     expect(edited).toMatchObject({ title: 'Sales by region', destination: { kind: 'dm', slackUserId: MEMBER } });

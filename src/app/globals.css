@@ -11,12 +11,11 @@
   --color-cyan: #3fd5ff;
   --color-lime: #b8ff3f;
   --color-danger: #ff4d4d;
-  /* Text on accent fills (yellow/pink/cyan/lime/danger): dark in both themes. */
+  /* Text on accent fills (yellow/pink/cyan/lime/danger). */
   --color-on-accent: #111111;
 
-  /* Botley's face stays the same in both themes. */
-  --botley-line: #111111;
-  --botley-screen: #ffffff;
+  --bibot-line: #111111;
+  --bibot-screen: #ffffff;
 
   --border-width: 3px;
   --border: var(--border-width) solid var(--color-border);
@@ -36,32 +35,6 @@
   --space-8: 32px;
 
   color-scheme: light;
-}
-
-/*
- * Dark theme. <html data-theme="light|dark"> is the user's saved choice (see src/web/theme);
- * without it we follow prefers-color-scheme. Keep the two dark blocks identical.
- */
-:root[data-theme='dark'] {
-  --color-bg: #141414;
-  --color-surface: #1f1f1f;
-  --color-ink: #f5f5f0;
-  --color-muted: #b0b0a8;
-  --color-border: #f5f5f0;
-  --color-shadow: #f5f5f0;
-  color-scheme: dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --color-bg: #141414;
-    --color-surface: #1f1f1f;
-    --color-ink: #f5f5f0;
-    --color-muted: #b0b0a8;
-    --color-border: #f5f5f0;
-    --color-shadow: #f5f5f0;
-    color-scheme: dark;
-  }
 }
 
 * {
@@ -155,8 +128,7 @@ pre {
 }
 
 /*
- * Print (Report Run pages are printed to A4): light tokens whatever the theme, no shadows,
- * thin borders. `:root:root:root` outranks both dark-theme selectors above.
+ * Print (Report Run pages are printed to A4): white background, no shadows, thin borders.
  */
 @page {
   size: A4;
@@ -164,7 +136,7 @@ pre {
 }
 
 @media print {
-  :root:root:root {
+  :root {
     --color-bg: #ffffff;
     --color-surface: #ffffff;
     --color-ink: #111111;

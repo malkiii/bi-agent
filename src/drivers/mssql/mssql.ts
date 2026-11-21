@@ -168,7 +168,7 @@ export function createMssqlDriver(connection: MssqlConnection): DataSourceDriver
     options: {
       encrypt: connection.sslMode !== 'disable',
       trustServerCertificate: connection.sslMode !== 'verify-full',
-      appName: 'botley',
+      appName: 'bibot',
       useUTC: true,
     },
   });

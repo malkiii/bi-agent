@@ -158,7 +158,7 @@ function renderTable(table: TableBlock, asTableBlock: boolean, preview: boolean)
 
   if (preview) {
     const total = `${table.rows.length}${table.truncated ? '+' : ''}`;
-    const files = table.truncated ? `The ${table.rows.length} rows Botley kept are` : 'The full table is';
+    const files = table.truncated ? `The ${table.rows.length} rows BIBot kept are` : 'The full table is';
     out.push(context(`Showing ${rows.length} of ${total} rows. ${files} attached below as CSV and XLSX.`));
   }
   return out;

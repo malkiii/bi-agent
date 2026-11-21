@@ -92,7 +92,7 @@ function assertNoForbiddenOperators(value: unknown): void {
   } else if (isPlainObject(value)) {
     for (const [key, inner] of Object.entries(value)) {
       if (FORBIDDEN_OPERATORS.has(key)) {
-        throw new QueryRejectedError(`${key} is not allowed: Botley only runs read-only find and aggregate queries.`);
+        throw new QueryRejectedError(`${key} is not allowed: BIBot only runs read-only find and aggregate queries.`);
       }
       assertNoForbiddenOperators(inner);
     }
@@ -333,7 +333,7 @@ export function createMongoDriver(connection: MongoConnection, options: MongoDri
   /** Created lazily: an invalid connection string must not throw from the factory. */
   function db() {
     client ??= new MongoClient(connection.uri, {
-      appName: 'botley',
+      appName: 'bibot',
       maxPoolSize: 3,
       serverSelectionTimeoutMS: options.serverSelectionTimeoutMs ?? 10_000,
     });

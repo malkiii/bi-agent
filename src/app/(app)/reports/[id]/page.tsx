@@ -18,10 +18,9 @@ import { deleteReportAction, deleteReportRunAction, pauseOrResumeReportAction } 
 import { ApproveButton } from '@/web/reports/ApproveButton';
 import { formatInZone, statusLabel } from '@/web/reports/format';
 import styles from '@/web/reports/reports.module.css';
-import { RunView } from '@/web/saved-questions/RunView';
 import { getCore } from '@/web/server-runtime';
 
-export const metadata = { title: 'Report · Botley' };
+export const metadata = { title: 'Report · BIBot' };
 export const dynamic = 'force-dynamic';
 
 /** One Report: its settings, controls, past Report Runs and, while a draft or after a failure, the Answer to approve. */
@@ -171,27 +170,10 @@ function PastRuns({ runs, reportId, canDelete }: { runs: ReportRunSummary[]; rep
   );
 }
 
-/** The Answer to approve (from the Conversation or Saved Question), for a draft or a Report that needs re-approval. */
+/** The Answer to approve (from the origin Conversation), for a draft or a Report that needs re-approval. */
 async function ApprovalReview({ core, actor, report }: { core: AppCore; actor: string; report: Report }) {
   const reapproving = report.status === 'needsReapproval';
   const heading = reapproving ? 'Fix and re-approve' : 'Check and approve';
-  if (report.origin.kind === 'savedQuestion') {
-    const question = await core.savedQuestions.get(actor, report.origin.savedQuestionId).catch(orNull);
-    if (!question)
-      return <p className={chat.notice}>This Report uses a Saved Question you can&apos;t see, so only its owner can approve it.</p>;
-    return (
-      <section className={styles.fieldset}>
-        <h2>{heading}</h2>
-        <p className={chat.muted}>
-          Its queries come from the Saved Question <Link href={`/questions/${question.id}`}>{question.title}</Link>. Run it to see
-          today&apos;s results, then approve to pin them and {reapproving ? 'resume' : 'start'} the schedule.
-        </p>
-        <RunView id={question.id} />
-        <ApproveButton id={report.id} reapprove={reapproving} />
-      </section>
-    );
-  }
-
   const conversation = await core.conversations.get(actor, report.origin.conversationId).catch(orNull);
   if (!conversation) return <p className={chat.notice}>Only {report.createdByName} can see this Report&apos;s Answer and approve it.</p>;
   const approvable = approvableAnswer(conversation.messages);
@@ -201,8 +183,8 @@ async function ApprovalReview({ core, actor, report }: { core: AppCore; actor: s
       <h2>{heading}</h2>
       <p className={chat.muted}>
         {reapproving
-          ? 'If a query broke (say, a renamed table), ask Botley to fix it in chat; once the Data Source is right again, re-approve to pin the latest Answer and resume. '
-          : 'Approving pins the queries and layout of this Answer; each run re-executes them and Botley adds fresh commentary. Not quite right? '}
+          ? 'If a query broke (say, a renamed table), ask BIBot to fix it in chat; once the Data Source is right again, re-approve to pin the latest Answer and resume. '
+          : 'Approving pins the queries and layout of this Answer; each run re-executes them and BIBot adds fresh commentary. Not quite right? '}
         <Link href={`/chat/${conversation.conversation.id}`}>{reapproving ? 'Fix it in chat' : 'Refine it in chat'}</Link>, then come back
         and approve.
       </p>

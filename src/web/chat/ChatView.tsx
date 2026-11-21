@@ -2,8 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { useBotley } from '@/web/botley/BotleyProvider';
-import { SaveQuestionButton } from '@/web/saved-questions/SaveQuestionButton';
+import { useBIBot } from '@/web/bibot/BIBotProvider';
 import { AnswerView } from './AnswerView';
 import type { ChatItem } from './items';
 import { DataSourcePicker, type DataSourceOption } from './DataSourcePicker';
@@ -41,7 +40,7 @@ export function ChatView({
   // Locked Data Sources that were deleted since are dropped, so the next Prompt sends a lock that still works.
   const [locked, setLocked] = useState(() => lockedDataSourceIds.filter((id) => dataSources.some((ds) => ds.id === id)));
   const seq = useRef(0);
-  const { setBotleyState, settleBotley } = useBotley();
+  const { setBIBotState, settleBIBot } = useBIBot();
   const router = useRouter();
 
   async function ask(text: string) {
@@ -56,7 +55,7 @@ export function ChatView({
       { kind: 'answer', id: answerId, status: 'pending', blocks: [], sources: [], queries: [] },
     ]);
     setBusy(true);
-    setBotleyState('thinking');
+    setBIBotState('thinking');
 
     let failed = false;
     let startedId: string | undefined;
@@ -98,7 +97,7 @@ export function ChatView({
       });
       if (!res.ok || !res.body) {
         const message = ((await res.json().catch(() => null)) as { error?: string } | null)?.error;
-        onEvent({ type: 'error', message: message ?? 'Botley could not be reached. Try again.' });
+        onEvent({ type: 'error', message: message ?? 'BIBot could not be reached. Try again.' });
       } else {
         const parser = createNdjsonParser(onEvent);
         const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -120,8 +119,8 @@ export function ChatView({
         ),
       );
       setBusy(false);
-      if (failed) setBotleyState('error');
-      else settleBotley();
+      if (failed) setBIBotState('error');
+      else settleBIBot();
       if (openAfterAnswer && startedId) router.push(`/chat/${startedId}`);
     }
   }
@@ -151,9 +150,6 @@ export function ChatView({
             ) : (
               <li key={item.id}>
                 <AnswerView {...item} />
-                {!readOnly && conversationId && item.messageId && item.status === 'complete' && item.queries.some((q) => q.ok) && (
-                  <SaveQuestionButton conversationId={conversationId} answerMessageId={item.messageId} />
-                )}
               </li>
             ),
           )}
@@ -173,7 +169,7 @@ export function ChatView({
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={empty ? 'Ask Botley about your data, e.g. "How many orders did we ship last week by region?"' : 'Ask a follow-up…'}
+            placeholder={empty ? 'Ask BIBot about your data, e.g. "How many orders did we ship last week by region?"' : 'Ask a follow-up…'}
             rows={empty ? 4 : 2}
             maxLength={8000}
             disabled={busy}

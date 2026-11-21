@@ -1,12 +1,12 @@
 import Link from 'next/link';
 import { formatNumber, isFiring, kpiPath } from '@/core';
-import { Botley } from '@/web/components/Botley';
+import { BIBot } from '@/web/components/BIBot';
 import chat from '@/web/chat/chat.module.css';
 import { requireUser } from '@/web/current-user';
 import styles from '@/web/reports/reports.module.css';
 import { getCore } from '@/web/server-runtime';
 
-export const metadata = { title: 'KPIs · Botley' };
+export const metadata = { title: 'KPIs · BIBot' };
 export const dynamic = 'force-dynamic';
 
 /** Every KPI (they have no owner), with its latest value. */
@@ -24,7 +24,7 @@ export default async function KpisPage() {
       </header>
       {kpis.length === 0 ? (
         <div className={chat.hero}>
-          <Botley rest="empty" size={72} />
+          <BIBot rest="empty" size={72} />
           <p className={chat.muted}>No KPIs yet. A KPI is a named single number, such as Daily Orders, that KPI Alerts can watch.</p>
         </div>
       ) : (

@@ -172,7 +172,7 @@ export function createPostgresDriver(connection: PostgresConnection): DataSource
     max: 3,
     connectionTimeoutMillis: 10_000,
     idleTimeoutMillis: 30_000,
-    application_name: 'botley',
+    application_name: 'bibot',
     types: typeParsers,
   });
   // Idle clients can error when the server goes away; the next checkout reconnects.
@@ -260,9 +260,9 @@ export function createPostgresDriver(connection: PostgresConnection): DataSource
 
       const result = await readOnly(timeoutMs, async (client) => {
         // `values` forces the extended protocol, which refuses more than one statement.
-        await client.query({ text: `DECLARE botley_result NO SCROLL CURSOR FOR ${sql}\n`, values: [] });
+        await client.query({ text: `DECLARE bibot_result NO SCROLL CURSOR FOR ${sql}\n`, values: [] });
         return client.query<unknown[]>({
-          text: `FETCH FORWARD ${Math.floor(maxRows) + 1} FROM botley_result`,
+          text: `FETCH FORWARD ${Math.floor(maxRows) + 1} FROM bibot_result`,
           rowMode: 'array',
         });
       });
@@ -302,7 +302,7 @@ export const postgresKind: DriverKind<z.infer<typeof postgresConfigSchema>, { pa
       label: 'User',
       input: 'text',
       required: true,
-      help: 'Use a read-only database user that can only SELECT the tables Botley should see.',
+      help: 'Use a read-only database user that can only SELECT the tables BIBot should see.',
     },
     { key: 'password', label: 'Password', input: 'password', secret: true, required: true },
     {

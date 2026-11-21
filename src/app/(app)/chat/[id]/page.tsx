@@ -10,7 +10,7 @@ import { PendingButton } from '@/web/components/PendingButton';
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 
-export const metadata = { title: 'Chat · Botley' };
+export const metadata = { title: 'Chat · BIBot' };
 
 /**
  * A saved Conversation, reopened. Only its Participants can see it. Web Conversations

@@ -8,7 +8,7 @@ describe('server config from environment', () => {
   test('applies defaults', () => {
     expect(parseServerConfig(minimal)).toEqual({
       mongoUrl: 'mongodb://mongo:27017',
-      mongoDb: 'botley',
+      mongoDb: 'bibot',
       uploadsDir: 'data/uploads',
       core: { slackTeamId: 'T0TEAM', adminSlackUserIds: [], encryptionKey: KEY },
       llm: null,
@@ -108,14 +108,14 @@ describe('server config from environment', () => {
 
   describe('the web app URL (Slack "Open in dashboard" links)', () => {
     test('is APP_URL, else AUTH_URL, without a trailing slash', () => {
-      expect(parseServerConfig({ ...minimal, AUTH_URL: 'https://botley.example/' }).core.appUrl).toBe('https://botley.example');
+      expect(parseServerConfig({ ...minimal, AUTH_URL: 'https://bibot.example/' }).core.appUrl).toBe('https://bibot.example');
       expect(parseServerConfig({ ...minimal, AUTH_URL: 'https://a.example', APP_URL: 'https://b.example' }).core.appUrl).toBe(
         'https://b.example',
       );
     });
 
     test('must be an http(s) URL', () => {
-      expect(() => parseServerConfig({ ...minimal, APP_URL: 'botley.example' })).toThrow(/APP_URL/);
+      expect(() => parseServerConfig({ ...minimal, APP_URL: 'bibot.example' })).toThrow(/APP_URL/);
     });
   });
 

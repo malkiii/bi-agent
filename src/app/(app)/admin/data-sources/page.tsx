@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { builtInDrivers } from '@/drivers';
-import { Botley } from '@/web/components/Botley';
+import { BIBot } from '@/web/components/BIBot';
 import { getCore } from '@/web/server-runtime';
 import styles from './data-sources.module.css';
 
@@ -23,8 +23,8 @@ export default async function DataSourcesPage({ searchParams }: { searchParams: 
       </header>
       {dataSources.length === 0 ? (
         <div className={styles.row}>
-          <Botley rest="empty" size={96} />
-          <p className={styles.muted}>No Data Sources yet. Add one to let Botley answer questions about it.</p>
+          <BIBot rest="empty" size={96} />
+          <p className={styles.muted}>No Data Sources yet. Add one to let BIBot answer questions about it.</p>
         </div>
       ) : (
         <ul className={styles.list}>

@@ -39,7 +39,7 @@ export function DataSourcePicker({
             {o.name}
           </label>
         ))}
-        <p className={styles.muted}>Tick some to keep Botley to them. Leave all unticked to let it choose.</p>
+        <p className={styles.muted}>Tick some to keep BIBot to them. Leave all unticked to let it choose.</p>
       </fieldset>
     </details>
   );

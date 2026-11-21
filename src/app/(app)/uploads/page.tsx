@@ -6,7 +6,7 @@ import { deleteUploadAction } from '@/web/uploads/actions';
 import { UploadForm } from '@/web/uploads/UploadForm';
 import styles from '@/web/catalog/catalog.module.css';
 
-export const metadata = { title: 'Uploads · Botley' };
+export const metadata = { title: 'Uploads · BIBot' };
 export const dynamic = 'force-dynamic';
 
 const NOTICES: Record<string, string> = { deleted: 'Dataset deleted.' };

@@ -15,10 +15,10 @@ import { builtInToolkits, type AgentToolkitFactory } from './tools';
 export const MAX_AGENT_STEPS = 16;
 
 export const FAILED_ANSWER_MESSAGE =
-  "Sorry, I couldn't finish this Answer. Try rephrasing your question, or ask an admin to check Botley's settings.";
+  "Sorry, I couldn't finish this Answer. Try rephrasing your question, or ask an admin to check BIBot's settings.";
 
 const BASE_INSTRUCTIONS = [
-  'You are Botley, a friendly BI analyst. You answer business questions from the Data Sources you can query.',
+  'You are BIBot, a friendly BI analyst. You answer business questions from the Data Sources you can query.',
   'Start with listDatasets, use describeDataset when you need column details, then runQuery.',
   "Map the user's business terms to Datasets and columns through their descriptions and Synonyms.",
   'Never invent numbers: every figure in the Answer must come from a query result.',

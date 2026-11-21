@@ -12,14 +12,12 @@ import {
 import type { DriverRegistry } from './data-sources/driver';
 import type { Clock, LanguageModelProvider, ResultCombiner, SlackGateway, UploadStorage } from './ports';
 import { createUploads, ensureUploadIndexes, type Uploads } from './uploads/uploads';
-import { createPreferences, ensurePreferenceIndexes, type Preferences } from './preferences/preferences';
 import { createSecretBox } from './secret-box';
 import { createUsers, ensureUserIndexes, type Users } from './users/users';
 import { createConversations, ensureConversationIndexes, type Conversations } from './conversations/conversations';
 import { createSlackBot, ensureSlackBotIndexes, type SlackBot } from './slack/slack-bot';
 import { createPinnedQueries, type PinnedQueries } from './pinned-queries/pinned-queries';
 import { createLlmSettings, type LlmSettings } from './llm-settings/llm-settings';
-import { createSavedQuestions, ensureSavedQuestionIndexes, type SavedQuestions } from './saved-questions/saved-questions';
 import { createChannelDefaults, type ChannelDefaults } from './channel-defaults/channel-defaults';
 import { createReports, ensureReportIndexes, reportsMadeFrom, type Reports } from './reports/reports';
 import { createScheduler, ensureJobIndexes, type Scheduler } from './scheduler/scheduler';
@@ -30,7 +28,6 @@ import { createAuditLog, createAuditRecorder, ensureAuditIndexes, type AuditLog 
 export * from './errors';
 export type * from './ports';
 export type { Role, SlackIdentity, User } from './users/users';
-export type { ThemePreference } from './preferences/preferences';
 export { MAX_MODEL_LENGTH, ModelListError, type LlmSettings, type LlmSettingsView } from './llm-settings/llm-settings';
 export { hasExposedDatasets } from './data-sources/data-sources';
 export type {
@@ -44,7 +41,7 @@ export type {
 } from './data-sources/data-sources';
 export * from './data-sources/driver';
 export * from './conversations/answer';
-export { CHART_MAX_ROWS, chartViewSpec, DARK_CHART_PALETTE, LIGHT_CHART_PALETTE, type ChartPalette } from './charts/chart';
+export { CHART_MAX_ROWS, chartViewSpec, LIGHT_CHART_PALETTE, type ChartPalette } from './charts/chart';
 export { tableFileName, tableToCsv, tableToXlsx, TABLE_FILE_TYPES, type TableFileFormat } from './files/table-files';
 export type {
   AskOptions,
@@ -83,12 +80,6 @@ export {
   type Uploads,
 } from './uploads/uploads';
 export { UPLOAD_COLUMN_TYPES, type UploadColumnType } from './uploads/column-types';
-export type {
-  SaveQuestionInput,
-  SavedQuestion,
-  SavedQuestions,
-  SavedQuestionVisibility,
-} from './saved-questions/saved-questions';
 export { approvableAnswer, reportPath, reportRunPath, REPORT_TITLE_MAX } from './reports/reports';
 export type {
   Report,
@@ -108,7 +99,7 @@ export type { Kpi, KpiAlert, KpiAlertInput, KpiAlertState, KpiAlertStatus, Kpis,
 export { describeCondition, formatNumber, type KpiAlertCondition } from './kpis/condition';
 export type { Scheduler } from './scheduler/scheduler';
 export type { Home, HomeOverview } from './home/home';
-export { AUDIT_EVENT_TYPES, AUDIT_PAGE_SIZE, BOTLEY_ACTOR } from './audit/audit';
+export { AUDIT_EVENT_TYPES, AUDIT_PAGE_SIZE, BIBOT_ACTOR } from './audit/audit';
 export type { AuditEntry, AuditEventType, AuditFilter, AuditLog, AuditPage } from './audit/audit';
 
 export interface AppCoreConfig {
@@ -140,7 +131,6 @@ export interface AppCoreDeps {
 
 export interface AppCore {
   users: Users;
-  preferences: Preferences;
   /** The active LLM provider and model (admin settings). */
   llmSettings: LlmSettings;
   dataSources: DataSources;
@@ -149,7 +139,6 @@ export interface AppCore {
   conversations: Conversations;
   slackBot: SlackBot;
   pinnedQueries: PinnedQueries;
-  savedQuestions: SavedQuestions;
   /** Scheduled Prompts whose runs re-execute Pinned Queries; Report Runs are their frozen pages. */
   reports: Reports;
   /** Named single numbers on Pinned Queries, and the KPI Alerts that watch them. */
@@ -186,7 +175,6 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     ],
   });
   const pinnedQueries = createPinnedQueries({ dataSources, clock: deps.clock, combiner: deps.combiner });
-  const savedQuestions = createSavedQuestions({ db: deps.db, clock: deps.clock, users, conversations, pinnedQueries, audit });
   const { scheduler, jobs } = createScheduler({ db: deps.db, clock: deps.clock, onError: deps.onAgentError });
   const reports = createReports({
     db: deps.db,
@@ -195,7 +183,6 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     slack: deps.slack,
     llm: llmSettings.active,
     conversations,
-    savedQuestions,
     pinnedQueries,
     jobs,
     appUrl: deps.config.appUrl,
@@ -217,7 +204,6 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
   });
   return {
     users,
-    preferences: createPreferences(deps),
     llmSettings: llmSettings.settings,
     dataSources,
     channelDefaults,
@@ -231,7 +217,6 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
       onError: deps.onAgentError,
     }),
     pinnedQueries,
-    savedQuestions,
     reports,
     kpis,
     home: createHome({ conversations, reports, kpis }),
@@ -252,11 +237,9 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
 /** Creates indexes. Idempotent; call once at process start. */
 export async function prepareDatabase(db: Db): Promise<void> {
   await ensureUserIndexes(db);
-  await ensurePreferenceIndexes(db);
   await ensureDataSourceIndexes(db);
   await ensureConversationIndexes(db);
   await ensureSlackBotIndexes(db);
-  await ensureSavedQuestionIndexes(db);
   await ensureReportIndexes(db);
   await ensureKpiIndexes(db);
   await ensureJobIndexes(db);

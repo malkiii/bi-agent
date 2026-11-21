@@ -4,7 +4,7 @@ import { useActionState, useEffect, useState } from 'react';
 import type { KpiAlertCondition, ReportDestination, ReportSchedule, SlackChannel } from '@/core';
 import { HOURLY_CRON, KPI_NAME_MAX } from '@/core/kpis/kpi-options';
 import { WEEKDAYS } from '@/core/reports/report-options';
-import { useBotley } from '@/web/botley/BotleyProvider';
+import { useBIBot } from '@/web/bibot/BIBotProvider';
 import formStyles from '@/web/components/DataSourceForm.module.css';
 import styles from '@/web/reports/reports.module.css';
 import { createAlertAction, updateAlertAction } from './actions';
@@ -42,7 +42,7 @@ export function AlertForm({ kpiId, alert, channels }: { kpiId?: string; alert?: 
   const [frequency, setFrequency] = useState<Frequency>(frequencyOf(schedule));
   const [destinationKind, setDestinationKind] = useState<'channel' | 'dm'>(alert?.destination.kind ?? 'channel');
   const [timezone, setTimezone] = useState(alert?.timezone ?? 'UTC');
-  const { setBotleyState } = useBotley();
+  const { setBIBotState } = useBIBot();
   const errors = state.fieldErrors ?? {};
   const editing = alert !== undefined;
   const initialChannel = alert?.destination.kind === 'channel' ? alert.destination.channel : '';
@@ -55,8 +55,8 @@ export function AlertForm({ kpiId, alert, channels }: { kpiId?: string; alert?: 
   }, [editing]);
 
   useEffect(() => {
-    if (state.message) setBotleyState('error');
-  }, [state, setBotleyState]);
+    if (state.message) setBIBotState('error');
+  }, [state, setBIBotState]);
 
   return (
     <form action={save} className={formStyles.form}>
@@ -223,7 +223,7 @@ export function AlertForm({ kpiId, alert, channels }: { kpiId?: string; alert?: 
             />
           ))}
         {destinationKind === 'channel' && channels?.length === 0 && (
-          <span className={formStyles.help}>Botley is not in any channel yet. Invite it with /invite @Botley, then reload.</span>
+          <span className={formStyles.help}>BIBot is not in any channel yet. Invite it with /invite @BIBot, then reload.</span>
         )}
         {errors.destination && <span className={formStyles.error}>{errors.destination}</span>}
       </fieldset>

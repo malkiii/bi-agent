@@ -128,7 +128,7 @@ describe('renderAnswer', () => {
 
     expect(blocks).toContainEqual({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: 'Showing 10 of 20+ rows. The 20 rows Botley kept are attached below as CSV and XLSX.' }],
+      elements: [{ type: 'mrkdwn', text: 'Showing 10 of 20+ rows. The 20 rows BIBot kept are attached below as CSV and XLSX.' }],
     });
   });
 
@@ -187,7 +187,7 @@ describe('renderAnswer', () => {
   test('an "Open in dashboard" link button when the dashboard URL is known', () => {
     const { blocks } = renderAnswer(answer({ blocks: [{ type: 'text', markdown: 'Hi' }] }), {
       answerId: 'a1',
-      dashboardUrl: 'https://botley.example/chat/fork/c1',
+      dashboardUrl: 'https://bibot.example/chat/fork/c1',
     });
 
     expect(blocks.at(-1)).toEqual({
@@ -197,7 +197,7 @@ describe('renderAnswer', () => {
           type: 'button',
           action_id: OPEN_IN_DASHBOARD_ACTION_ID,
           text: { type: 'plain_text', text: 'Open in dashboard' },
-          url: 'https://botley.example/chat/fork/c1',
+          url: 'https://bibot.example/chat/fork/c1',
         },
       ],
     });

@@ -1,11 +1,11 @@
 import Link from 'next/link';
-import { Botley } from '@/web/components/Botley';
-import { AUDIT_EVENT_TYPES, BOTLEY_ACTOR, type AuditEntry, type AuditEventType, type AuditFilter } from '@/core';
+import { BIBot } from '@/web/components/BIBot';
+import { AUDIT_EVENT_TYPES, BIBOT_ACTOR, type AuditEntry, type AuditEventType, type AuditFilter } from '@/core';
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 import styles from './audit.module.css';
 
-export const metadata = { title: 'Audit log · Botley' };
+export const metadata = { title: 'Audit log · BIBot' };
 export const dynamic = 'force-dynamic';
 
 const TYPE_LABELS: Record<AuditEventType, string> = {
@@ -60,7 +60,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
     core.audit.list(me.slackUserId, filter),
     core.users.list(me.slackUserId),
   ]);
-  const names = new Map<string, string>([[BOTLEY_ACTOR, 'Botley (scheduled)'], ...users.map((u) => [u.slackUserId, u.name] as const)]);
+  const names = new Map<string, string>([[BIBOT_ACTOR, 'BIBot (scheduled)'], ...users.map((u) => [u.slackUserId, u.name] as const)]);
 
   return (
     <section className={`card ${styles.page}`}>
@@ -74,7 +74,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
           Who
           <select name="actor" defaultValue={filter.actor ?? ''}>
             <option value="">Anyone</option>
-            <option value={BOTLEY_ACTOR}>Botley (scheduled)</option>
+            <option value={BIBOT_ACTOR}>BIBot (scheduled)</option>
             {users.map((u) => (
               <option key={u.slackUserId} value={u.slackUserId}>
                 {u.name}
@@ -113,7 +113,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
 
       {entries.length === 0 ? (
         <div className={styles.empty}>
-          <Botley rest="empty" size={80} />
+          <BIBot rest="empty" size={80} />
           <p>{page > 1 ? 'No more entries.' : 'No entries match.'}</p>
         </div>
       ) : (

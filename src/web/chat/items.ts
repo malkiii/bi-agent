@@ -6,7 +6,7 @@ export type ChatItem =
   | {
       kind: 'answer';
       id: string;
-      /** The stored Answer message id, once known (needed to save it as a Saved Question). */
+      /** The stored Answer message id, once known (for block downloads). */
       messageId?: string;
       status: 'complete' | 'failed' | 'pending';
       error?: string;

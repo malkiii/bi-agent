@@ -1,6 +1,6 @@
-# Botley — self-hosted BI agent for Slack
+# BIBot — self-hosted BI agent for Slack
 
-Ask business questions about your databases, Salesforce and spreadsheets by @mentioning Botley in Slack or from the web dashboard. Vocabulary: [GLOSSARY.md](GLOSSARY.md). Decisions: [docs/adr/](docs/adr/).
+Ask business questions about your databases, Salesforce and spreadsheets by @mentioning BIBot in Slack or from the web dashboard. Vocabulary: [GLOSSARY.md](GLOSSARY.md). Decisions: [docs/adr/](docs/adr/).
 
 ## Run it (Docker)
 
@@ -17,7 +17,7 @@ docker compose up --build      # web, worker, mongo
 
 Slack only redirects to **https** URLs. The URL doesn't have to be public: the browser follows the redirect, and the server only makes outbound calls to Slack. Pick one option:
 
-1. **Bundled Caddy with an internal certificate:** set `SITE_ADDRESS` (e.g. `botley.internal` or `localhost`) and `AUTH_URL=https://<SITE_ADDRESS>`, then run `docker compose --profile https up --build`. Caddy's own CA signs the certificate. Trust its root on the machines that use Botley: `docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt`.
+1. **Bundled Caddy with an internal certificate:** set `SITE_ADDRESS` (e.g. `bibot.internal` or `localhost`) and `AUTH_URL=https://<SITE_ADDRESS>`, then run `docker compose --profile https up --build`. Caddy's own CA signs the certificate. Trust its root on the machines that use BIBot: `docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt`.
 2. **Your existing reverse proxy or a tunnel** (cloudflared, ngrok, Tailscale Funnel) in front of `web:3000`. Set `AUTH_URL` to its https URL.
 
 ### Slack app setup (sign-in)
@@ -25,7 +25,7 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 1. Create a Slack app in your workspace. Under **OAuth & Permissions**, add the redirect URL `$AUTH_URL/api/auth/callback/slack`. Under **User Token Scopes**, add `openid`, `email` and `profile`.
 2. Copy the Client ID and Client Secret into `AUTH_SLACK_ID` and `AUTH_SLACK_SECRET`.
 3. Set `SLACK_TEAM_ID` to your workspace ID (`T…`). Sign-in from any other workspace is refused.
-4. Under **Basic Information > Display Information**, upload `public/botley-avatar.png` as the app icon so the bot has Botley's face.
+4. Under **Basic Information > Display Information**, upload `public/bibot-avatar.png` as the app icon so the bot has BIBot's face.
 5. Put the first admins' Slack user IDs (`U…`) in `ADMIN_SLACK_USER_IDS`. They become admins on their **first** sign-in, and everyone else becomes a member. Later changes to the list don't change existing users.
 
 ### Slack app setup (bot)
@@ -33,7 +33,7 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 1. Under **Socket Mode**, enable it and create an app-level token with `connections:write`; put it in `SLACK_APP_TOKEN` (`xapp-…`).
 2. Under **OAuth & Permissions > Bot Token Scopes**, add `app_mentions:read`, `chat:write`, `reactions:write`, `files:write` (chart PNGs and table files in threads), `im:history`, `channels:read`, `groups:read`, `im:read`. Install the app and put the Bot User OAuth Token in `SLACK_BOT_TOKEN` (`xoxb-…`).
 3. Under **Event Subscriptions**, subscribe to the bot events `app_mention` and `message.im` (not `message.channels`: thread chatter without a mention is ignored). Under **Interactivity & Shortcuts**, turn interactivity on (no URL needed in Socket Mode). Under **App Home**, enable the Messages tab and "Allow users to send messages".
-4. Invite the bot to channels (`/invite @Botley`). The worker logs `Slack connected in Socket Mode` when it is up.
+4. Invite the bot to channels (`/invite @BIBot`). The worker logs `Slack connected in Socket Mode` when it is up.
 
 ## Environment variables
 
@@ -48,7 +48,7 @@ Slack only redirects to **https** URLs. The URL doesn't have to be public: the b
 | `APP_URL` | worker | The web app's URL for Slack's "Open in dashboard" links. Default: `AUTH_URL`. Neither set = no link. |
 | `ENCRYPTION_KEY` | web, worker | 32-byte key, base64 or hex (`openssl rand -base64 32`). Encrypts Data Source credentials (AES-256-GCM). Required; keep it stable, or saved credentials become unreadable. |
 | `MONGO_URL` | web, worker | Required outside compose. Compose always uses `mongodb://mongo:27017`. |
-| `MONGO_DB` | web, worker | Database name. Default `botley`. |
+| `MONGO_DB` | web, worker | Database name. Default `bibot`. |
 | `WEB_PORT` | compose | Host port for plain-http `web`. Default 3000. |
 | `SITE_ADDRESS` | compose (caddy) | Hostname for the `https` profile. |
 | `LLM_PROVIDER` | web, worker | Optional: the provider Admin > Settings pre-selects (`anthropic`, `openai`, `google`, `openrouter`, `groq`, `ollama` or `openai-compatible`). Admins choose the provider and model there, from the chat models the provider lists (or a typed model id). Until an admin chooses, Answers fail with a friendly message. |
@@ -64,7 +64,7 @@ Node 24 and Docker (tests start real MongoDB and PostgreSQL servers with Testcon
 
 ```sh
 npm install
-docker run -d --name botley-mongo -p 27017:27017 mongo:8   # or any Mongo
+docker run -d --name bibot-mongo -p 27017:27017 mongo:8   # or any Mongo
 MONGO_URL=mongodb://localhost:27017 npm run dev            # web on :3000 (reads .env)
 MONGO_URL=mongodb://localhost:27017 npm run dev:worker     # worker (tsx watch, reads .env)
 
@@ -95,8 +95,7 @@ src/
     files/         table-files.ts (Table block -> CSV / XLSX, file names; pure)
     slack/         slack-bot.ts (handlePrompt, showQuery, thread uploads), render.ts (Answer -> Block Kit + uploads, pure)
     agent/         The agent loop: agent.ts (runAgent), tools.ts (toolkits, incl. combineResults), catalog.ts (what the agent may query: lock, Channel Default), answer-draft.ts
-    pinned-queries/ Pin an Answer's queries + layout, re-run them without the LLM (Saved Questions, Reports, KPIs)
-    saved-questions/ Saved Questions: save an Answer, private/shared, re-run
+    pinned-queries/ Pin an Answer's queries + layout, re-run them without the LLM (Reports, KPIs)
     home/          The dashboard home's overview: recent Conversations, upcoming Report Runs, firing KPI Alerts, KPI tiles
     audit/         The audit log: AuditRecorder (modules write) and AuditLog (admins read, filter)
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
@@ -113,8 +112,7 @@ src/
   server/          Process wiring shared by web and worker: env config, bootstrap()
   worker/          Worker process: main.ts (entry), worker.ts (startWorker)
   web/             Web-only code: auth helpers, server runtime, components
-    botley/        Botley's state machine (machine.ts) and store (BotleyProvider.tsx)
-    theme/         Light/dark theme: toggle, server action, per-user preference
+    bibot/        BIBot's state machine (machine.ts) and store (BIBotProvider.tsx)
     chat/          Web chat: ChatView (prompt box + streamed Answers), AnswerView (blocks, sources, show query, CSV/XLSX links), ChartView (vega-embed), DataSourcePicker (lock to Data Sources), actions.ts (fork), wire.ts (NDJSON protocol)
     saved-questions/ "Save question" button, re-run view, server actions
   app/             Next.js App Router routes
@@ -141,36 +139,35 @@ test/global-setup.ts   Starts MongoDB and PostgreSQL once per test run
   ```
 
   Each harness gets its own database, so test files run in parallel. All `*.test.ts` files under `src/` and `test/` run in `npm test`.
-- **Theme:** neubrutalist tokens are CSS variables in `src/app/globals.css`, with shared `.card`, `.btn`, `.tag`, `.actions` and `.page-narrow` classes. Components use the tokens, never raw colours. Text on an accent fill (yellow, pink, cyan, lime, danger) uses `--color-on-accent`, which stays dark in both themes. Check every new page in dark mode.
-- **Dark mode:** the root layout sets `<html data-theme="light|dark">` from the user's saved preference (`core.preferences`, Mongo collection `userPreferences`). Without it (`system`, or signed out) the `prefers-color-scheme` media query decides. Dark token values live in two identical blocks in `globals.css`; change both. The header toggle (`src/web/theme/ThemeToggle.tsx`) applies the change at once and saves it with a server action.
+- **Theme:** neubrutalist tokens are CSS variables in `src/app/globals.css`, with shared `.card`, `.btn`, `.tag`, `.actions` and `.page-narrow` classes. Components use the tokens, never raw colours. Text on an accent fill (yellow, pink, cyan, lime, danger) uses `--color-on-accent`. The app is light only.
 
-### Botley
+### BIBot
 
-`<Botley />` (`src/web/components/Botley.tsx`) is an animated SVG with six states: `idle`, `thinking`, `success`, `error`, `empty`, `sleeping`. Animations are CSS in `Botley.module.css`, and all of them stop under `prefers-reduced-motion` (each face still reads without motion). Botley's mood comes from one store per page, `BotleyProvider`, which is mounted in the root layout. Its rules live in `src/web/botley/machine.ts` and are unit tested:
+`<BIBot />` (`src/web/components/BIBot.tsx`) is an animated SVG with six states: `idle`, `thinking`, `success`, `error`, `empty`, `sleeping`. Animations are CSS in `BIBot.module.css`, and all of them stop under `prefers-reduced-motion` (each face still reads without motion). BIBot's mood comes from one store per page, `BIBotProvider`, which is mounted in the root layout. Its rules live in `src/web/bibot/machine.ts` and are unit tested:
 
-- **Rest** is the page's resting mood. It is `idle` unless the page declares something else: `<Botley rest="empty" />` on an empty page, `<Botley rest="error" />` on an error page. Pages without a `rest` prop go back to `idle`. From a server component that renders Botley somewhere else, use `<BotleyRest state="empty" />`.
-- **Cues** are temporary moods caused by events, and they win over rest. `success` flashes for 2.5 s and `error` for 4 s, then Botley returns to rest. `thinking` (and every other state) lasts until settled. Pass `{ forMs }` to choose a duration (`null` means until settled).
-- **Sleeping** happens on its own: an idle Botley with no pointer, keyboard, scroll or focus activity for 2 minutes falls asleep, and any activity wakes it.
-- `<Botley state="..." />` pins a mood that events can't change. Avoid it on real pages.
+- **Rest** is the page's resting mood. It is `idle` unless the page declares something else: `<BIBot rest="empty" />` on an empty page, `<BIBot rest="error" />` on an error page. Pages without a `rest` prop go back to `idle`. From a server component that renders BIBot somewhere else, use `<BIBotRest state="empty" />`.
+- **Cues** are temporary moods caused by events, and they win over rest. `success` flashes for 2.5 s and `error` for 4 s, then BIBot returns to rest. `thinking` (and every other state) lasts until settled. Pass `{ forMs }` to choose a duration (`null` means until settled).
+- **Sleeping** happens on its own: an idle BIBot with no pointer, keyboard, scroll or focus activity for 2 minutes falls asleep, and any activity wakes it.
+- `<BIBot state="..." />` pins a mood that events can't change. Avoid it on real pages.
 
-How a feature drives Botley from a client component:
+How a feature drives BIBot from a client component:
 
 ```tsx
-const { setBotleyState, settleBotley } = useBotley();   // from '@/web/botley/BotleyProvider'
+const { setBIBotState, settleBIBot } = useBIBot();   // from '@/web/bibot/BIBotProvider'
 
-setBotleyState('thinking');               // e.g. Prompt sent, waiting for the agent (chat status 'submitted')
-settleBotley();                           // first Answer token arrived / stream finished
-setBotleyState('success');                // e.g. Data Source test passed, Report saved (flashes, then back to rest)
-setBotleyState('error');                  // e.g. a failed tool call or request (flashes, then back to rest)
+setBIBotState('thinking');               // e.g. Prompt sent, waiting for the agent (chat status 'submitted')
+settleBIBot();                           // first Answer token arrived / stream finished
+setBIBotState('success');                // e.g. Data Source test passed, Report saved (flashes, then back to rest)
+setBIBotState('error');                  // e.g. a failed tool call or request (flashes, then back to rest)
 ```
 
-- From a server component, fire a one-off cue with `<BotleyCue state="success" />` (the home page uses it right after sign-in).
+- From a server component, fire a one-off cue with `<BIBotCue state="success" />` (the home page uses it right after sign-in).
 - A form whose submit is slow can use `<PendingButton>` (`src/web/components/PendingButton.tsx`). It shows `thinking` while the form's server action runs. Sign-in and sign-out use it.
-- Empty lists (no Conversations, no Data Sources yet) render `<Botley rest="empty" />` next to the empty-state text.
+- Empty lists (no Conversations, no Data Sources yet) render `<BIBot rest="empty" />` next to the empty-state text.
 
 Events wired so far: idle by default, `thinking` while sign-in or sign-out is pending, `success` right after sign-in, `error` on the sign-in error, the forbidden page and the `error.tsx` boundaries, `empty` on the 404 page, and in the web chat `thinking` from sending a Prompt until the Answer finishes (then settle, or `error` if it failed). Data Source tests and Reports should hook in as described above when they are built.
 
-The Slack avatar `public/botley-avatar.png` (1024 px) is rendered from `public/botley.svg`. After changing the SVG, re-render it with any SVG rasteriser, e.g. `@resvg/resvg-js`: `new Resvg(svg, { fitTo: { mode: 'width', value: 1024 } }).render().asPng()`.
+The Slack avatar `public/bibot-avatar.png` (1024 px) is rendered from `public/bibot.svg`. After changing the SVG, re-render it with any SVG rasteriser, e.g. `@resvg/resvg-js`: `new Resvg(svg, { fitTo: { mode: 'width', value: 1024 } }).render().asPng()`.
 
 ## Answering Prompts (agent loop)
 
@@ -194,9 +191,9 @@ Web chat: `/chat` (new Conversation + recent list) and `/chat/[id]` (reopen; Sla
 
 History and Forks: `/history` lists `conversations.history(actor, { source?, page })` (Participant only, newest first, 20 per page). A Slack Conversation's "Open in dashboard" (Slack button, history, `/chat/[id]`) goes to `/chat/fork/[id]`, whose button (a POST, so link previews never create anything) calls `conversations.fork(actor, id)`: a new Web Conversation for that Participant with `forkedFrom` and a copy of the thread's messages, which become model context. The Slack Conversation is never changed. `POST /api/chat` `{ conversationId?, prompt, dataSourceIds? }` streams NDJSON `ChatStreamEvent`s (`conversation`, the `AnswerEvent`s, then `answer` (with the stored `messageId`) or `error`). See `src/web/chat/wire.ts`.
 
-## Pinned Queries and Saved Questions
+## Pinned Queries
 
-ADR 0001: a pinned Answer is re-run by executing its stored queries through the drivers and rebuilding its blocks from the fresh results. The LLM is never asked to answer again. Saved Questions (#17) use this, and Reports and KPIs should too.
+ADR 0001: a pinned Answer is re-run by executing its stored queries through the drivers and rebuilding its blocks from the fresh results. The LLM is never asked to answer again. Reports and KPIs use this.
 
 **Block → result mapping.** Every data block records the result it shows. A Table block has `resultId` (the `ExecutedQuery.resultId`), and its `columns` are the selected columns in order (`emitTable` takes an optional `columns` list). Answers stored before this have no `resultId`. Their tables can't be rebuilt and are left out when pinning. Chart blocks carry `resultId` and their `spec` the same way, and are redrawn from the fresh rows (their fields are checked again).
 
@@ -217,10 +214,8 @@ const run: PinnedRun = await core.pinnedQueries.run(pinned);
 
 - `run` never rejects because a query failed. A failing query (schema change, a Data Source that was deleted or no longer has Exposed Datasets) makes `status: 'failed'` and sets `error` (`The Pinned Query "totals" failed: …`). Each block built from that query becomes `{ status: 'error' }`, and the other blocks are still rebuilt. A column that disappeared from a result fails only its block.
 - Queries run through the same catalog as the agent (`createAgentCatalog`), so they obey the same Data Source visibility. Read-only enforcement stays in the drivers. `combineResults` queries (`combines` set) run afterwards, in their recorded order, over the fresh results they read. One fails when any of its inputs did.
-- Text blocks are pinned verbatim, so their numbers are as old as the save. The Saved Question view says so. Reports should replace or add to them with fresh commentary written from `run.results`. KPIs read `run.results[resultId].rows[0][0]`.
+- Text blocks are pinned verbatim, so their numbers are as old as the pin. Reports replace or add to them with fresh commentary written from `run.results`. KPIs read `run.results[resultId].rows[0][0]`.
 - **To add a block type:** add it to `ResultBlock` and `PinnedBlock`, then add an entry `{ pin, dependsOn, rebuild }` to `pinnableBlocks`. The table is keyed by `ResultBlock['type']`, so it won't compile until you do.
-
-**`core.savedQuestions`** (`src/core/saved-questions/saved-questions.ts`, Mongo `savedQuestions`): `save(actor, { conversationId, answerMessageId, title?, visibility? })` (Participants only; title defaults to the Prompt), `get`, `list(actor, { scope: 'mine' | 'shared' })`, `run(actor, id)` (returns a `PinnedRun` and sets `lastRunAt`), `update(actor, id, { title?, visibility? })` (owner only) and `delete` (owner or admin). A private Saved Question is `NotFoundError` for everyone else. Web: "Save question" under each Answer with results, `/questions` (mine + shared) and `/questions/[id]` (Run, share/unshare, delete, Pinned Queries).
 
 ## Audit log and admin cleanup
 
@@ -229,7 +224,7 @@ const run: PinnedRun = await core.pinnedQueries.run(pinned);
 - `prompt` (every Prompt, web and Slack), `query` (every executed query, also Pinned Query re-runs: Data Source, query, duration, row count, ok/error) and `tokens` (provider, model, input/output tokens; for Answers, Report commentary and KPI Alert messages);
 - changes: `data_source`, `dataset` (details, uploads, deletions), `channel_default`, `role`, `llm_settings`, `report`, `report_run`, `kpi`, `kpi_alert`, `conversation`.
 
-Dataset exposure changes are `dataset` entries (`exposure_changed`, target = the Data Source). Scheduled work (Report Runs, KPI Alert checks) is recorded as `BOTLEY_ACTOR`. Modules get an `AuditRecorder` from `createAppCore` and call `audit.record(...)` after a change succeeds; `queryEntries` and `tokenEntries` build usage entries. **A new use case that changes configuration or scheduled work must record an entry** (add its type to `AUDIT_EVENT_TYPES`). Details never hold secrets.
+Dataset exposure changes are `dataset` entries (`exposure_changed`, target = the Data Source). Scheduled work (Report Runs, KPI Alert checks) is recorded as `BIBOT_ACTOR`. Modules get an `AuditRecorder` from `createAppCore` and call `audit.record(...)` after a change succeeds; `queryEntries` and `tokenEntries` build usage entries. **A new use case that changes configuration or scheduled work must record an entry** (add its type to `AUDIT_EVENT_TYPES`). Details never hold secrets.
 
 Admins only: `audit.list(actor, { actor?, type?, from?, to?, page?, pageSize? })` (newest first; `to` exclusive; 50 per page, at most 200) at `/admin/audit`, and the cleanup actions `conversations.remove` / `conversations.listAll` (`/admin/conversations`; refused with ValidationError while a Report or draft KPI was made from the Conversation, since approving pins its latest Answer again), `reports.removeRun` (on the Report and Report Run pages) and `uploads.delete` (removes the Parquet file; `/uploads`).
 
@@ -289,7 +284,7 @@ A kind connected through a consent screen sets `DriverKind.oauth` (`authorizatio
 
 `src/drivers/salesforce/salesforce.ts`: SOQL over REST (API `v68.0` by default) as the integration user, using plain `fetch`.
 
-- **Setup:** in Salesforce, create an **External Client App** (Connected Apps can't be created any more). Enable OAuth, require PKCE, use the scopes `api refresh_token`, set the callback to `$AUTH_URL/api/admin/data-sources/oauth/callback`, and set the refresh token policy to "valid until revoked". In Botley, add a Salesforce Data Source with the login URL (`https://login.salesforce.com`, `https://test.salesforce.com` or a My Domain URL) and the consumer key and secret. Then click **Connect to Salesforce** on its page and sign in as a read-only integration user.
+- **Setup:** in Salesforce, create an **External Client App** (Connected Apps can't be created any more). Enable OAuth, require PKCE, use the scopes `api refresh_token`, set the callback to `$AUTH_URL/api/admin/data-sources/oauth/callback`, and set the refresh token policy to "valid until revoked". In BIBot, add a Salesforce Data Source with the login URL (`https://login.salesforce.com`, `https://test.salesforce.com` or a My Domain URL) and the consumer key and secret. Then click **Connect to Salesforce** on its page and sign in as a read-only integration user.
 - **Read-only:** the driver only sends GETs (query, sobjects, describe). `assertReadOnlySoql` accepts one `SELECT` with no `;` and refuses `FOR UPDATE`, `FOR VIEW`, `FOR REFERENCE` and `UPDATE TRACKING|VIEWSTAT`, because those lock records or write stats.
 - **Limits:** pages are fetched through `nextRecordsUrl` until `maxRows + 1` records have arrived. One abort signal covers every page and any refresh, so the timeout applies to the whole query.
 - **Tokens:** on a 401 the driver refreshes once (shared between concurrent calls), retries, and persists the new access token (and a rotated refresh token) through `saveSecrets`. `invalid_grant` becomes "Reconnect the Data Source".

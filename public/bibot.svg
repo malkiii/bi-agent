@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
-  <!-- Botley's face: the Slack app avatar (botley-avatar.png is rendered from this file, see README). -->
+  <!-- BIBot's face: the Slack app avatar (bibot-avatar.png is rendered from this file, see README). -->
   <rect width="160" height="160" fill="#3fd5ff"/>
   <g transform="translate(0 14)">
     <line x1="80" y1="14" x2="80" y2="34" stroke="#111" stroke-width="4"/>

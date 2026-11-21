@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import type { ConversationSource } from '@/core';
-import { Botley } from '@/web/components/Botley';
+import { BIBot } from '@/web/components/BIBot';
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 import styles from './history.module.css';
 
-export const metadata = { title: 'History · Botley' };
+export const metadata = { title: 'History · BIBot' };
 
 const FILTERS: { label: string; source?: ConversationSource['kind'] }[] = [
   { label: 'All' },
@@ -51,9 +51,9 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
 
       {conversations.length === 0 ? (
         <section className={`card ${styles.empty}`}>
-          <Botley rest="empty" size={80} />
+          <BIBot rest="empty" size={80} />
           <p>
-            {page > 1 ? 'No more Conversations.' : 'No Conversations yet.'} <Link href="/chat">Ask Botley something</Link> or
+            {page > 1 ? 'No more Conversations.' : 'No Conversations yet.'} <Link href="/chat">Ask BIBot something</Link> or
             @mention it in Slack.
           </p>
         </section>

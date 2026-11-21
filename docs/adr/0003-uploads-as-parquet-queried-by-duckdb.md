@@ -10,5 +10,5 @@ Uploaded spreadsheets and CSVs are converted to one Parquet file per Dataset on 
 ## Consequences
 
 - To replace a Dataset, we write a new Parquet file and swap it in atomically. Appending rewrites the file.
-- Uploaded Datasets belong to one shared "Uploads" Data Source that Botley maintains itself. They are exposed as soon as they are saved, so members don't have to wait for an admin; admins can still hide or delete them.
+- Uploaded Datasets belong to one shared "Uploads" Data Source that BIBot maintains itself. They are exposed as soon as they are saved, so members don't have to wait for an admin; admins can still hide or delete them.
 - Each process sandboxes its DuckDB: queries can read only the Dataset files, through their views, and cannot change that setting.

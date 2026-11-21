@@ -1,19 +1,19 @@
 /**
- * Botley's state machine, pure so it can be tested without React.
+ * BIBot's state machine, pure so it can be tested without React.
  *
  * - `rest`: the page's resting mood (idle by default, `empty` on an empty page, `error` on an error page).
  * - `cue`: a temporary mood set by an app event (thinking, success, ...). It wins over `rest`
  *   until it expires (`DEFAULT_CUE_MS` or the caller's `forMs`) or is settled.
- * - An idle Botley with no activity for `SLEEP_AFTER_MS` shows `sleeping`; any activity wakes it.
+ * - An idle BIBot with no activity for `SLEEP_AFTER_MS` shows `sleeping`; any activity wakes it.
  */
-export type BotleyState = 'idle' | 'thinking' | 'success' | 'error' | 'empty' | 'sleeping';
+export type BIBotState = 'idle' | 'thinking' | 'success' | 'error' | 'empty' | 'sleeping';
 
-export const BOTLEY_STATES: readonly BotleyState[] = ['idle', 'thinking', 'success', 'error', 'empty', 'sleeping'];
+export const BIBOT_STATES: readonly BIBotState[] = ['idle', 'thinking', 'success', 'error', 'empty', 'sleeping'];
 
 export const SLEEP_AFTER_MS = 120_000;
 
 /** How long a cue shows when the caller gives no `forMs`. `null` = until settled. */
-export const DEFAULT_CUE_MS: Record<BotleyState, number | null> = {
+export const DEFAULT_CUE_MS: Record<BIBotState, number | null> = {
   idle: null,
   thinking: null,
   success: 2_500,
@@ -22,27 +22,27 @@ export const DEFAULT_CUE_MS: Record<BotleyState, number | null> = {
   sleeping: null,
 };
 
-export interface BotleyMachine {
-  rest: BotleyState;
-  cue: { state: BotleyState; until: number | null } | null;
+export interface BIBotMachine {
+  rest: BIBotState;
+  cue: { state: BIBotState; until: number | null } | null;
   lastActivityAt: number;
 }
 
-export type BotleyEvent =
+export type BIBotEvent =
   /** Show `state` for `forMs` (default `DEFAULT_CUE_MS[state]`; `null` = until settled). */
-  | { type: 'cue'; state: BotleyState; now: number; forMs?: number | null }
+  | { type: 'cue'; state: BIBotState; now: number; forMs?: number | null }
   /** Drop the current cue and go back to the resting state (counts as activity). */
   | { type: 'settle'; now: number }
   /** Change the page's resting state. */
-  | { type: 'rest'; state: BotleyState }
-  /** The person did something (pointer, keyboard, scroll, focus). Wakes Botley. */
+  | { type: 'rest'; state: BIBotState }
+  /** The person did something (pointer, keyboard, scroll, focus). Wakes BIBot. */
   | { type: 'activity'; now: number };
 
-export function initialBotley(now: number, rest: BotleyState = 'idle'): BotleyMachine {
+export function initialBIBot(now: number, rest: BIBotState = 'idle'): BIBotMachine {
   return { rest, cue: null, lastActivityAt: now };
 }
 
-export function botleyReducer(machine: BotleyMachine, event: BotleyEvent): BotleyMachine {
+export function bibotReducer(machine: BIBotMachine, event: BIBotEvent): BIBotMachine {
   switch (event.type) {
     case 'cue': {
       const forMs = event.forMs === undefined ? DEFAULT_CUE_MS[event.state] : event.forMs;
@@ -58,7 +58,7 @@ export function botleyReducer(machine: BotleyMachine, event: BotleyEvent): Botle
   }
 }
 
-export function visibleBotleyState(machine: BotleyMachine, now: number): BotleyState {
+export function visibleBIBotState(machine: BIBotMachine, now: number): BIBotState {
   const { cue } = machine;
   if (cue && (cue.until === null || now < cue.until)) return cue.state;
   if (machine.rest === 'idle' && now - machine.lastActivityAt >= SLEEP_AFTER_MS) return 'sleeping';

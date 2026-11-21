@@ -18,7 +18,7 @@ export default async function SettingsPage() {
       {llm.providers.length === 0 ? (
         <p>
           No LLM provider is configured. Add a provider&apos;s API key to <code>.env</code> (for example{' '}
-          <code>ANTHROPIC_API_KEY</code>) and restart Botley.
+          <code>ANTHROPIC_API_KEY</code>) and restart BIBot.
         </p>
       ) : (
         <>

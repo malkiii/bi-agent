@@ -6,7 +6,7 @@ import { requireUser } from '@/web/current-user';
 import { AlertForm } from '@/web/kpis/AlertForm';
 import { getCore } from '@/web/server-runtime';
 
-export const metadata = { title: 'Edit KPI Alert · Botley' };
+export const metadata = { title: 'Edit KPI Alert · BIBot' };
 export const dynamic = 'force-dynamic';
 
 /** Edits a KPI Alert's condition, frequency, destination and name. Anyone may. */

@@ -55,7 +55,7 @@ export default async function DataSourcePage({
         <h1>{ds.name}</h1>
         {isUploads ? (
           <p className={styles.muted}>
-            Botley maintains this Data Source: members add Datasets on the <Link href="/uploads">Uploads</Link> page.
+            BIBot maintains this Data Source: members add Datasets on the <Link href="/uploads">Uploads</Link> page.
             Admins can hide Datasets below or delete them there.
           </p>
         ) : kind ? (
@@ -77,9 +77,9 @@ export default async function DataSourcePage({
             <span className="tag">{ds.connected ? 'connected' : 'not connected'}</span>
           </header>
           <p className={styles.muted}>
-            Sign in to {kind.oauth.providerLabel} as the read-only integration user Botley should query as. The
+            Sign in to {kind.oauth.providerLabel} as the read-only integration user BIBot should query as. The
             tokens are stored encrypted and refreshed automatically. Callback URL to register:{' '}
-            <code>{OAUTH_CALLBACK_PATH}</code> on your Botley URL.
+            <code>{OAUTH_CALLBACK_PATH}</code> on your BIBot URL.
           </p>
           <form action={connectDataSource}>
             <input type="hidden" name="id" value={ds.id} />
@@ -101,7 +101,7 @@ export default async function DataSourcePage({
           </form>
         </header>
         <p className={styles.muted}>
-          Only Exposed Datasets are visible to Botley.
+          Only Exposed Datasets are visible to BIBot.
           {ds.schemaRefreshedAt && ` Last refreshed ${ds.schemaRefreshedAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`}
         </p>
         {ds.datasets.length > 0 && (
@@ -135,7 +135,7 @@ export default async function DataSourcePage({
       {!isUploads && (
         <section className="card">
           <h2>Delete</h2>
-          <p className={styles.muted}>Botley will stop using this Data Source. This cannot be undone.</p>
+          <p className={styles.muted}>BIBot will stop using this Data Source. This cannot be undone.</p>
           <form action={deleteDataSource}>
             <input type="hidden" name="id" value={ds.id} />
             <button type="submit" className={`btn ${styles.danger}`}>

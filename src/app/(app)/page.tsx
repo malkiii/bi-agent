@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { describeCondition, describeSchedule, formatNumber, kpiPath, reportPath } from '@/core';
-import { BotleyCue } from '@/web/botley/BotleyProvider';
-import { Botley } from '@/web/components/Botley';
+import { BIBotCue } from '@/web/bibot/BIBotProvider';
+import { BIBot } from '@/web/components/BIBot';
 import { ChatView } from '@/web/chat/ChatView';
 import { chatDataSources } from '@/web/chat/data-sources';
 import { requireUser } from '@/web/current-user';
@@ -11,7 +11,7 @@ import styles from './home.module.css';
 
 export const dynamic = 'force-dynamic';
 
-/** Botley celebrates if the user arrived here straight from signing in. */
+/** BIBot celebrates if the user arrived here straight from signing in. */
 const JUST_SIGNED_IN_MS = 15_000;
 
 function signedInWithin(lastSignInAt: Date, ms: number, now: Date) {
@@ -30,12 +30,12 @@ export default async function HomePage() {
 
   return (
     <div className={styles.page}>
-      {signedInWithin(user.lastSignInAt, JUST_SIGNED_IN_MS, new Date()) && <BotleyCue state="success" />}
+      {signedInWithin(user.lastSignInAt, JUST_SIGNED_IN_MS, new Date()) && <BIBotCue state="success" />}
       <header className={styles.hero}>
-        <Botley size={72} />
+        <BIBot size={72} />
         <div>
           <h1 className={styles.title}>Hi {firstName}, what do you want to know?</h1>
-          <p className={styles.lead}>Ask about your data here, or mention Botley in Slack.</p>
+          <p className={styles.lead}>Ask about your data here, or mention BIBot in Slack.</p>
         </div>
       </header>
 

@@ -40,7 +40,7 @@ export function DataSourceForm({ kind, existing, saveAction, testAction }: DataS
       {existing && <input type="hidden" name="id" value={existing.id} />}
 
       <p className={styles.notice}>
-        Botley only ever runs read-only queries, but give it a <strong>read-only database user</strong> anyway.
+        BIBot only ever runs read-only queries, but give it a <strong>read-only database user</strong> anyway.
         Every signed-in member can ask about every Data Source, so don&apos;t connect data some members must not see.
       </p>
 

@@ -1,24 +1,21 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { signOut } from '@/auth';
-import type { ThemePreference, User } from '@/core';
-import { ThemeToggle } from '@/web/theme/ThemeToggle';
+import type { User } from '@/core';
 import { PendingButton } from './PendingButton';
 import styles from './AppShell.module.css';
 
 /** The signed-in frame: header with navigation and the user menu, then the page. */
-export function AppShell({ user, theme, children }: { user: User; theme: ThemePreference; children: ReactNode }) {
+export function AppShell({ user, children }: { user: User; children: ReactNode }) {
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
         <Link href="/" className={styles.brand}>
-          Botley
+          BIBot
         </Link>
         <nav className={styles.nav}>
-          <Link href="/">Home</Link>
           <Link href="/chat">Chat</Link>
           <Link href="/history">History</Link>
-          <Link href="/questions">Saved Questions</Link>
           <Link href="/reports">Reports</Link>
           <Link href="/kpis">KPIs</Link>
           <Link href="/catalog">Catalog</Link>
@@ -26,7 +23,6 @@ export function AppShell({ user, theme, children }: { user: User; theme: ThemePr
           {user.role === 'admin' && <Link href="/admin">Admin</Link>}
         </nav>
         <div className={styles.user}>
-          <ThemeToggle initial={theme} />
           <span>{user.name}</span>
           <span className="tag">{user.role}</span>
           <form

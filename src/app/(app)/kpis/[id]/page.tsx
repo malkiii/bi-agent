@@ -24,7 +24,7 @@ import { formatInZone } from '@/web/reports/format';
 import styles from '@/web/reports/reports.module.css';
 import { getCore } from '@/web/server-runtime';
 
-export const metadata = { title: 'KPI · Botley' };
+export const metadata = { title: 'KPI · BIBot' };
 export const dynamic = 'force-dynamic';
 
 /** One KPI: its current value, controls, its KPI Alerts and, while a draft, the Answer to approve. */
@@ -181,7 +181,7 @@ async function ApprovalReview({ core, actor, kpi }: { core: AppCore; actor: stri
       <h2>Check and approve</h2>
       <p className={chat.muted}>
         A KPI is one number: the first number in the single row of this Answer&apos;s result. Approving pins its query; Alert checks
-        re-run it without asking Botley again. Not quite right? <Link href={`/chat/${conversation.conversation.id}`}>Refine it in chat</Link>,
+        re-run it without asking BIBot again. Not quite right? <Link href={`/chat/${conversation.conversation.id}`}>Refine it in chat</Link>,
         then come back and approve.
       </p>
       {approvable ? (

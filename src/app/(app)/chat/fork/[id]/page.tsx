@@ -3,12 +3,12 @@ import { notFound, redirect } from 'next/navigation';
 import { NotFoundError } from '@/core';
 import { forkConversationAction } from '@/web/chat/actions';
 import styles from '@/web/chat/chat.module.css';
-import { Botley } from '@/web/components/Botley';
+import { BIBot } from '@/web/components/BIBot';
 import { PendingButton } from '@/web/components/PendingButton';
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 
-export const metadata = { title: 'Open in dashboard · Botley' };
+export const metadata = { title: 'Open in dashboard · BIBot' };
 
 /**
  * Where Slack's "Open in dashboard" link lands. Creating the Fork is a POST (the button), so
@@ -29,7 +29,7 @@ export default async function ForkPage({ params }: { params: Promise<{ id: strin
   return (
     <div className={`${styles.page} page-narrow`}>
       <header className={styles.hero}>
-        <Botley size={96} />
+        <BIBot size={96} />
         <h1>Open in the dashboard</h1>
       </header>
       <section className="card">
@@ -38,7 +38,7 @@ export default async function ForkPage({ params }: { params: Promise<{ id: strin
           {prompts === 1 ? 'Prompt' : 'Prompts'})
         </p>
         <p>
-          A Fork is a new web Conversation that starts from this thread&apos;s history, so Botley keeps the context. Nothing
+          A Fork is a new web Conversation that starts from this thread&apos;s history, so BIBot keeps the context. Nothing
           you ask in it is posted to Slack, and the thread stays as it is.
         </p>
         <div className="actions">

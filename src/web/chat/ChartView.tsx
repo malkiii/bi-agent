@@ -2,12 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ChartBlock } from '@/core';
-import { chartViewSpec, DARK_CHART_PALETTE, LIGHT_CHART_PALETTE, type ChartPalette } from '@/core/charts/chart';
+import { chartViewSpec, LIGHT_CHART_PALETTE, type ChartPalette } from '@/core/charts/chart';
 import styles from './chat.module.css';
 
 /**
- * A Chart Result Block drawn with vega-embed in the app theme. Colours come from the CSS
- * tokens, so it follows the light/dark theme and redraws when the theme changes.
+ * A Chart Result Block drawn with vega-embed in the app's colours, read from the CSS tokens.
  */
 export function ChartView({ block }: { block: ChartBlock }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -48,24 +47,15 @@ export function ChartView({ block }: { block: ChartBlock }) {
   );
 }
 
-/** The chart palette for the current theme, read from the CSS tokens; updates when the theme changes or printing starts. */
+/** The chart palette read from the CSS tokens; updates when printing starts (globals.css swaps tokens for paper). */
 function useChartPalette(): ChartPalette {
   const [palette, setPalette] = useState<ChartPalette>(LIGHT_CHART_PALETTE);
   useEffect(() => {
     const read = () => setPalette(paletteFromTokens());
     read();
-    const observer = new MutationObserver(read);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    media.addEventListener('change', read);
-    // Printing switches to the light tokens (globals.css), so charts redraw light for paper.
     const print = window.matchMedia('print');
     print.addEventListener('change', read);
-    return () => {
-      observer.disconnect();
-      media.removeEventListener('change', read);
-      print.removeEventListener('change', read);
-    };
+    return () => print.removeEventListener('change', read);
   }, []);
   return palette;
 }
@@ -73,8 +63,7 @@ function useChartPalette(): ChartPalette {
 function paletteFromTokens(): ChartPalette {
   const css = getComputedStyle(document.documentElement);
   const token = (name: string) => css.getPropertyValue(name).trim();
-  const dark = css.colorScheme.includes('dark');
-  const base = dark ? DARK_CHART_PALETTE : LIGHT_CHART_PALETTE;
+  const base = LIGHT_CHART_PALETTE;
   const accents = ['--color-yellow', '--color-pink', '--color-cyan', '--color-lime'].map(token).filter(Boolean);
   return {
     ...base,

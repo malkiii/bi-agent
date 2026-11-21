@@ -1,5 +1,5 @@
 /**
- * Every Data Source kind Botley ships with. Add a new kind here after its driver passes
+ * Every Data Source kind BIBot ships with. Add a new kind here after its driver passes
  * the contract suite (src/drivers/contract). Server-only: drivers import native DB clients.
  */
 import type { DriverRegistry } from '@/core/data-sources/driver';

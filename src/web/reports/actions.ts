@@ -13,7 +13,7 @@ export interface ReportFormState {
   fieldErrors?: Record<string, string>;
 }
 
-/** Creates a draft Report from a Prompt (the agent answers first) or a Saved Question, then opens it. */
+/** Creates a draft Report from a Prompt (the agent answers first), then opens it. */
 export async function createReportAction(_prev: ReportFormState, form: FormData): Promise<ReportFormState> {
   const user = await requireUser();
   const core = await getCore();
@@ -25,10 +25,7 @@ export async function createReportAction(_prev: ReportFormState, form: FormData)
   };
   let id: string;
   try {
-    const report =
-      form.get('queriesFrom') === 'savedQuestion'
-        ? await core.reports.createFromSavedQuestion(user.slackUserId, { ...settings, savedQuestionId: text(form, 'savedQuestionId') })
-        : await core.reports.createFromPrompt(user.slackUserId, { ...settings, prompt: text(form, 'prompt') });
+    const report = await core.reports.createFromPrompt(user.slackUserId, { ...settings, prompt: text(form, 'prompt') });
     id = report.id;
   } catch (error) {
     if (error instanceof ValidationError) return { message: error.message, fieldErrors: { ...error.fieldErrors } };

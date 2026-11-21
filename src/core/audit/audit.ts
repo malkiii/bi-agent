@@ -9,7 +9,7 @@ import type { ExecutedQuery } from '../conversations/answer';
 import type { Users } from '../users/users';
 
 /** The actor of entries written by scheduled work (Report Runs, KPI Alert checks), not by a person. */
-export const BOTLEY_ACTOR = 'botley';
+export const BIBOT_ACTOR = 'bibot';
 
 export const AUDIT_EVENT_TYPES = [
   'prompt',
@@ -32,7 +32,7 @@ export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 export interface AuditEntry {
   id: string;
   at: Date;
-  /** Slack user ID of the person, or BOTLEY_ACTOR for scheduled work. */
+  /** Slack user ID of the person, or BIBOT_ACTOR for scheduled work. */
   actor: string;
   type: AuditEventType;
   /** What happened, e.g. `created`, `deleted`, `asked`, `executed`. */

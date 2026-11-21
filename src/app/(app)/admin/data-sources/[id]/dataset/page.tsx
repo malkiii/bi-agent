@@ -45,9 +45,9 @@ export default async function DatasetDetailsPage({
           <code>{dataset.id}</code>
         </h1>
         <p className={styles.muted}>
-          Botley reads these when choosing what to query. Synonyms are business terms, separated by commas, e.g.
+          BIBot reads these when choosing what to query. Synonyms are business terms, separated by commas, e.g.
           “revenue, turnover” for a total amount column.
-          {!dataset.exposed && ' This Dataset is not exposed, so Botley does not see it yet.'}
+          {!dataset.exposed && ' This Dataset is not exposed, so BIBot does not see it yet.'}
         </p>
         <label className={styles.field}>
           <span>Description</span>

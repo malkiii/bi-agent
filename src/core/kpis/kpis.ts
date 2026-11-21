@@ -12,7 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { generateText } from 'ai';
-import { BOTLEY_ACTOR, queryEntries, tokenEntries, type AuditRecorder } from '../audit/audit';
+import { BIBOT_ACTOR, queryEntries, tokenEntries, type AuditRecorder } from '../audit/audit';
 import type { Db } from 'mongodb';
 import type { AskOptions, Conversations } from '../conversations/conversations';
 import { NotFoundError, ValidationError } from '../errors';
@@ -282,7 +282,7 @@ export function createKpis(deps: Deps): Kpis {
         prompt: facts,
       });
       await audit.record(
-        ...tokenEntries(BOTLEY_ACTOR, usage, await deps.llm.choice(), 'alert_message', { kind: 'kpi_alert', id: alert._id }),
+        ...tokenEntries(BIBOT_ACTOR, usage, await deps.llm.choice(), 'alert_message', { kind: 'kpi_alert', id: alert._id }),
       );
       if (text.trim()) return text.trim();
     } catch (error) {
@@ -309,7 +309,7 @@ export function createKpis(deps: Deps): Kpis {
     // A paused KPI's Alerts keep their schedule but skip the check.
     if (kpi.status !== 'active' || !kpi.pinned) return next();
 
-    const measured = await measure(BOTLEY_ACTOR, { ...kpi, pinned: kpi.pinned });
+    const measured = await measure(BIBOT_ACTOR, { ...kpi, pinned: kpi.pinned });
     const now = clock.now();
     if (!measured.ok) {
       // Said once, when checks start failing, not on every check.
