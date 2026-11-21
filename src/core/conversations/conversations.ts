@@ -15,6 +15,8 @@ import { NotFoundError, ValidationError } from '../errors';
 import type { Clock, ResultCombiner } from '../ports';
 import type { ActiveLanguageModel } from '../llm-settings/llm-settings';
 import type { Answer, AnswerEvent } from './answer';
+import { queryEntries, tokenEntries, type AuditRecorder } from '../audit/audit';
+import type { Users } from '../users/users';
 
 export type ConversationSource = { kind: 'web' } | { kind: 'slack'; channel: string; threadTs: string };
 
@@ -111,6 +113,14 @@ export interface Conversations {
    * touched. NotFoundError unless `actor` is a Participant; ValidationError for a non-Slack one.
    */
   fork(actorSlackUserId: string, slackConversationId: string): Promise<Conversation>;
+  /**
+   * Admin only (ForbiddenError): deletes a Conversation and its messages, whoever took part
+   * (NotFoundError when it doesn't exist). ValidationError while a Report or draft KPI was made
+   * from it: approving them pins its latest Answer again.
+   */
+  remove(actorSlackUserId: string, conversationId: string): Promise<void>;
+  /** Admin only (ForbiddenError): every Conversation with at least one Prompt, whoever took part; like `history`. */
+  listAll(actorSlackUserId: string, options?: HistoryOptions): Promise<HistoryPage>;
 }
 
 export const HISTORY_PAGE_SIZE = 20;
@@ -145,12 +155,28 @@ interface Deps {
   combiner?: ResultCombiner;
   /** The Channel Default's Data Source ids for a Slack channel, if it has one. */
   channelDefault?: (channel: string) => Promise<readonly string[] | undefined>;
+  audit: AuditRecorder;
+  users: Users;
+  /** What still needs a Conversation (e.g. `Report "Weekly sales"`); it can't be deleted while there is any. */
+  usesOf?: (conversationId: string) => Promise<string[]>;
 }
 
 const TITLE_LENGTH = 80;
 export const MAX_PROMPT_LENGTH = 8_000;
 
-export function createConversations({ db, clock, llm, dataSources, toolkits, onAgentError, channelDefault, combiner }: Deps): Conversations {
+export function createConversations({
+  db,
+  clock,
+  llm,
+  dataSources,
+  toolkits,
+  onAgentError,
+  channelDefault,
+  combiner,
+  audit,
+  users,
+  usesOf,
+}: Deps): Conversations {
   const conversations = db.collection<ConversationDoc>('conversations');
   const messages = db.collection<MessageDoc>('conversationMessages');
 
@@ -170,6 +196,21 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
     const doc = { ...message, _id: randomUUID(), conversationId, seq: counted.messageCount } as MessageDoc;
     await messages.insertOne(doc);
     return doc;
+  }
+
+  async function historyPage(
+    filter: { participants?: string },
+    { source, page = 1, pageSize = HISTORY_PAGE_SIZE }: HistoryOptions = {},
+  ): Promise<HistoryPage> {
+    const current = Math.max(1, Math.floor(page));
+    const size = Math.min(100, Math.max(1, Math.floor(pageSize)));
+    const docs = await conversations
+      .find({ ...filter, messageCount: { $gt: 0 }, ...(source ? { 'source.kind': source } : {}) })
+      .sort({ updatedAt: -1, _id: -1 })
+      .skip((current - 1) * size)
+      .limit(size + 1)
+      .toArray();
+    return { conversations: docs.slice(0, size).map(toConversation), page: current, hasNextPage: docs.length > size };
   }
 
   async function modelContext(conversationId: string): Promise<ModelMessage[]> {
@@ -265,6 +306,13 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
         text,
         createdAt: clock.now(),
       });
+      await audit.record({
+        actor,
+        type: 'prompt',
+        action: 'asked',
+        target: { id: conversation._id, ...(conversation.title ? { name: conversation.title } : {}) },
+        details: { prompt: text, source: conversation.source.kind },
+      });
 
       // Data Source choice: the Conversation lock (web), then the Channel Default (Slack), then the agent's own.
       const preferred = conversation.source.kind === 'slack' ? await channelDefault?.(conversation.source.channel) : undefined;
@@ -284,6 +332,11 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
         combiner,
       });
       const stored = await append(conversation._id, { kind: 'answer', promptId: promptDoc._id, answer, createdAt: clock.now() });
+      const answeredIn = { kind: 'conversation', id: conversation._id };
+      await audit.record(
+        ...queryEntries(actor, answer.queries, answeredIn),
+        ...tokenEntries(actor, answer.usage, await llm.choice(), 'answer', answeredIn),
+      );
       return { answer, answerMessageId: stored._id };
     },
 
@@ -310,16 +363,13 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
       return doc.answer;
     },
 
-    async history(actor, { source, page = 1, pageSize = HISTORY_PAGE_SIZE } = {}) {
-      const current = Math.max(1, Math.floor(page));
-      const size = Math.min(100, Math.max(1, Math.floor(pageSize)));
-      const docs = await conversations
-        .find({ participants: actor, messageCount: { $gt: 0 }, ...(source ? { 'source.kind': source } : {}) })
-        .sort({ updatedAt: -1, _id: -1 })
-        .skip((current - 1) * size)
-        .limit(size + 1)
-        .toArray();
-      return { conversations: docs.slice(0, size).map(toConversation), page: current, hasNextPage: docs.length > size };
+    history(actor, options) {
+      return historyPage({ participants: actor }, options);
+    },
+
+    async listAll(actor, options) {
+      await users.requireAdmin(actor);
+      return historyPage({}, options);
     },
 
     async fork(actor, slackConversationId) {
@@ -353,6 +403,25 @@ export function createConversations({ db, clock, llm, dataSources, toolkits, onA
         throw error;
       }
       return toConversation(doc);
+    },
+
+    async remove(actor, conversationId) {
+      await users.requireAdmin(actor);
+      const uses = (await usesOf?.(conversationId)) ?? [];
+      if (uses.length > 0) {
+        throw new ValidationError(`This Conversation is used by ${uses.join(', ')}. Delete ${uses.length > 1 ? 'them' : 'it'} first.`);
+      }
+      // The Conversation first, so its messages are never visible without it.
+      const removed = await conversations.findOneAndDelete({ _id: conversationId });
+      if (!removed) throw new NotFoundError('Conversation not found.');
+      await messages.deleteMany({ conversationId });
+      await audit.record({
+        actor,
+        type: 'conversation',
+        action: 'deleted',
+        target: { id: conversationId, name: removed.title },
+        details: { source: removed.source.kind, participants: removed.participants },
+      });
     },
   };
   return api;

@@ -5,6 +5,8 @@ import { BlockView } from '@/web/chat/AnswerView';
 import chat from '@/web/chat/chat.module.css';
 import { Markdown } from '@/web/chat/Markdown';
 import { requireUser } from '@/web/current-user';
+import { PendingButton } from '@/web/components/PendingButton';
+import { deleteReportRunAction } from '@/web/reports/actions';
 import { formatInZone } from '@/web/reports/format';
 import styles from '@/web/reports/reports.module.css';
 import { PrintButton } from '@/web/reports/PrintButton';
@@ -35,6 +37,14 @@ export default async function ReportRunPage({ params }: { params: Promise<{ id: 
             <Link href={reportPath(run.reportId)} className="btn btn--ghost">
               Report
             </Link>
+          )}
+          {user.role === 'admin' && (
+            <form action={deleteReportRunAction}>
+              <input type="hidden" name="id" value={run.id} />
+              <input type="hidden" name="reportId" value={run.reportId} />
+              <input type="hidden" name="back" value={reportExists ? 'report' : 'reports'} />
+              <PendingButton className="btn btn--pink">Delete</PendingButton>
+            </form>
           )}
         </div>
       </header>

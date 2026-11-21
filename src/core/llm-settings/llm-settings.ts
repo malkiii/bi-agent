@@ -3,6 +3,7 @@ import type { Db } from 'mongodb';
 import { AppError, ValidationError } from '../errors';
 import type { Clock, LanguageModelProvider, LlmChoice } from '../ports';
 import type { Users } from '../users/users';
+import type { AuditRecorder } from '../audit/audit';
 
 export interface LlmSettingsView {
   /** The provider and model new Prompts use; null when none is configured. */
@@ -30,6 +31,8 @@ export interface LlmSettings {
 /** Resolves the model for a new Prompt (the App Core's view of the active LLM). */
 export interface ActiveLanguageModel {
   getModel(): Promise<LanguageModel>;
+  /** The provider and model `getModel` builds now; null when none is configured. */
+  choice(): Promise<LlmChoice | null>;
 }
 
 interface LlmSettingsDoc {
@@ -49,7 +52,19 @@ export class NoLlmConfiguredError extends AppError {
   }
 }
 
-export function createLlmSettings({ db, clock, users, llm }: { db: Db; clock: Clock; users: Users; llm: LanguageModelProvider }): {
+export function createLlmSettings({
+  db,
+  clock,
+  users,
+  llm,
+  audit,
+}: {
+  db: Db;
+  clock: Clock;
+  users: Users;
+  llm: LanguageModelProvider;
+  audit: AuditRecorder;
+}): {
   settings: LlmSettings;
   active: ActiveLanguageModel;
 } {
@@ -93,6 +108,7 @@ export function createLlmSettings({ db, clock, users, llm }: { db: Db; clock: Cl
           { $set: { provider, model, updatedBy: actor, updatedAt: clock.now() } },
           { upsert: true },
         );
+        await audit.record({ actor, type: 'llm_settings', action: 'changed', details: { provider, model } });
         return view();
       },
     },
@@ -101,6 +117,9 @@ export function createLlmSettings({ db, clock, users, llm }: { db: Db; clock: Cl
         const { active } = await resolve();
         if (!active) throw new NoLlmConfiguredError();
         return llm.getModel(active);
+      },
+      async choice() {
+        return (await resolve()).active;
       },
     },
   };

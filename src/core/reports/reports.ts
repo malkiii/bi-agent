@@ -10,6 +10,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { generateText } from 'ai';
+import { BOTLEY_ACTOR, queryEntries, tokenEntries, type AuditRecorder } from '../audit/audit';
 import type { Db } from 'mongodb';
 import type { AnswerSource, ExecutedQuery } from '../conversations/answer';
 import type { AskOptions, ConversationMessage, Conversations } from '../conversations/conversations';
@@ -146,6 +147,8 @@ export interface Reports {
   listRuns(actorSlackUserId: string, reportId: string): Promise<ReportRunSummary[]>;
   /** Any Report Run, for any signed-in user. */
   getRun(actorSlackUserId: string, runId: string): Promise<ReportRun>;
+  /** Admin only (ForbiddenError): deletes one Report Run (NotFoundError when it doesn't exist). */
+  removeRun(actorSlackUserId: string, runId: string): Promise<void>;
   /** Channels the bot is in, to choose a destination from. Rejects when Slack can't list them. */
   slackChannels(actorSlackUserId: string): Promise<SlackChannel[]>;
 }
@@ -166,6 +169,7 @@ interface Deps {
   /** The web app's URL; Report Run links point at it. */
   appUrl?: string;
   onError?: (error: unknown) => void;
+  audit: AuditRecorder;
 }
 
 export { REPORT_TITLE_MAX };
@@ -185,7 +189,7 @@ export function reportPath(reportId: string): string {
 }
 
 export function createReports(deps: Deps): Reports {
-  const { db, clock, users, slack, conversations, savedQuestions, pinnedQueries, jobs } = deps;
+  const { db, clock, users, slack, conversations, savedQuestions, pinnedQueries, jobs, audit } = deps;
   const reports = db.collection<ReportDoc>('reports');
   const runs = db.collection<ReportRunDoc>('reportRuns');
 
@@ -193,6 +197,10 @@ export function createReports(deps: Deps): Reports {
     const doc = await reports.findOne({ _id: id });
     if (!doc) throw new NotFoundError('Report not found.');
     return doc;
+  }
+
+  async function audited(actor: string, action: string, report: { id: string; title: string }, details?: Record<string, unknown>) {
+    await audit.record({ actor, type: 'report', action, target: { id: report.id, name: report.title }, details });
   }
 
   /** Applies `fields` if the Report is still in `status` (it may have changed since it was read). */
@@ -244,6 +252,7 @@ export function createReports(deps: Deps): Reports {
       failure: null,
     };
     await reports.insertOne(doc);
+    await audited(actor, 'created', { id: doc._id, title: doc.title }, { origin: doc.origin.kind });
     return toReport(doc);
   }
 
@@ -257,7 +266,7 @@ export function createReports(deps: Deps): Reports {
 
   async function commentaryFor(report: ReportDoc, blocks: PinnedRunBlock[]): Promise<string | null> {
     try {
-      const { text } = await generateText({
+      const { text, usage } = await generateText({
         model: await deps.llm.getModel(),
         system:
           'You write the commentary for a scheduled business report. In 2 to 4 short sentences, say what stands out ' +
@@ -265,6 +274,9 @@ export function createReports(deps: Deps): Reports {
           'never invent figures. Plain markdown, no headings, no tables.',
         prompt: `Report: ${report.title}\nIts Prompt: ${report.prompt}\n\n${describeData(blocks)}`,
       });
+      await audit.record(
+        ...tokenEntries(BOTLEY_ACTOR, usage, await deps.llm.choice(), 'report_commentary', { kind: 'report', id: report._id }),
+      );
       return text.trim() || null;
     } catch (error) {
       deps.onError?.(error);
@@ -306,6 +318,7 @@ export function createReports(deps: Deps): Reports {
     const report = await reports.findOne({ _id: reportId });
     if (report?.status !== 'active' || !report.pinned) return null;
     const result = await pinnedQueries.run(report.pinned);
+    await audit.record(...queryEntries(BOTLEY_ACTOR, result.queries, { kind: 'report', id: reportId }));
     const commentary = result.status === 'complete' ? await commentaryFor(report, result.blocks) : null;
     const run: ReportRunDoc = {
       _id: randomUUID(),
@@ -389,41 +402,50 @@ export function createReports(deps: Deps): Reports {
       );
       if (!updated) throw new ValidationError('The Report changed meanwhile. Reload and try again.');
       await jobs.set(REPORT_JOB, id, next);
+      await audited(actor, 'approved', { id, title: updated.title });
       return toReport(updated);
     },
 
-    async update(_actor, id, input) {
+    async update(actor, id, input) {
       const doc = await load(id);
       const settings = await settingsOf(doc.createdBy, input, doc.title);
       const now = clock.now();
       const next = doc.status === 'active' ? nextRunAt(settings.schedule, settings.timezone, now) : null;
       const updated = await setIfStatus(id, doc.status, { ...settings, nextRunAt: next, updatedAt: now });
       if (doc.status === 'active') await jobs.set(REPORT_JOB, id, next);
+      await audited(actor, 'updated', updated, {
+        schedule: settings.schedule,
+        timezone: settings.timezone,
+        destination: settings.destination,
+      });
       return updated;
     },
 
-    async pause(_actor, id) {
+    async pause(actor, id) {
       const doc = await load(id);
       if (doc.status !== 'active') throw new ValidationError('Only an active Report can be paused.');
       const updated = await setIfStatus(id, 'active', { status: 'paused', nextRunAt: null, updatedAt: clock.now() });
       await jobs.set(REPORT_JOB, id, null);
+      await audited(actor, 'paused', updated);
       return updated;
     },
 
-    async resume(_actor, id) {
+    async resume(actor, id) {
       const doc = await load(id);
       if (doc.status !== 'paused') throw new ValidationError('Only a paused Report can be resumed.');
       const now = clock.now();
       const next = nextRunAt(doc.schedule, doc.timezone, now);
       const updated = await setIfStatus(id, 'paused', { status: 'active', nextRunAt: next, updatedAt: now });
       await jobs.set(REPORT_JOB, id, next);
+      await audited(actor, 'resumed', updated);
       return updated;
     },
 
     async remove(actor, id) {
       await users.requireAdmin(actor);
-      await reports.deleteOne({ _id: id });
+      const removed = await reports.findOneAndDelete({ _id: id });
       await jobs.set(REPORT_JOB, id, null);
+      if (removed) await audited(actor, 'deleted', { id, title: removed.title });
     },
 
     async listRuns(_actor, reportId) {
@@ -448,6 +470,19 @@ export function createReports(deps: Deps): Reports {
       if (!doc) throw new NotFoundError('Report Run not found.');
       const { _id, ...rest } = doc;
       return { id: _id, ...rest };
+    },
+
+    async removeRun(actor, runId) {
+      await users.requireAdmin(actor);
+      const removed = await runs.findOneAndDelete({ _id: runId });
+      if (!removed) throw new NotFoundError('Report Run not found.');
+      await audit.record({
+        actor,
+        type: 'report_run',
+        action: 'deleted',
+        target: { id: runId, name: removed.title },
+        details: { reportId: removed.reportId, scheduledFor: removed.scheduledFor },
+      });
     },
 
     async slackChannels() {
@@ -492,6 +527,15 @@ function toReport(doc: ReportDoc): Report {
   const { _id, ...rest } = doc;
   // Reports stored before failures were tracked have no `failure` field.
   return { id: _id, ...rest, failure: rest.failure ?? null };
+}
+
+/** Titles of the Reports made from this Conversation: (re-)approving them pins its latest Answer. */
+export async function reportsMadeFrom(db: Db, conversationId: string): Promise<string[]> {
+  const docs = await db
+    .collection<ReportDoc>('reports')
+    .find({ 'origin.kind': 'prompt', 'origin.conversationId': conversationId }, { projection: { title: 1 } })
+    .toArray();
+  return docs.map((d) => d.title);
 }
 
 export async function ensureReportIndexes(db: Db) {

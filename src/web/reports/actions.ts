@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { AppError, reportPath, ValidationError, type ReportDestinationInput, type ReportSchedule } from '@/core';
+import { AppError, NotFoundError, reportPath, ValidationError, type ReportDestinationInput, type ReportSchedule } from '@/core';
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 
@@ -96,6 +96,20 @@ export async function deleteReportAction(form: FormData): Promise<void> {
   await (await getCore()).reports.remove(user.slackUserId, text(form, 'id'));
   revalidatePath('/reports');
   redirect('/reports');
+}
+
+/** Admin only: deletes one Report Run, then returns to its Report (or the Reports list once the Report is gone). */
+export async function deleteReportRunAction(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const reportId = text(form, 'reportId');
+  try {
+    await (await getCore()).reports.removeRun(user.slackUserId, text(form, 'id'));
+  } catch (error) {
+    // Already deleted, e.g. in another tab.
+    if (!(error instanceof NotFoundError)) throw error;
+  }
+  revalidatePath(reportPath(reportId));
+  redirect(text(form, 'back') === 'report' ? reportPath(reportId) : '/reports');
 }
 
 function text(form: FormData, key: string): string {

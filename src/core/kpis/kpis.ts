@@ -12,6 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { generateText } from 'ai';
+import { BOTLEY_ACTOR, queryEntries, tokenEntries, type AuditRecorder } from '../audit/audit';
 import type { Db } from 'mongodb';
 import type { AskOptions, Conversations } from '../conversations/conversations';
 import { NotFoundError, ValidationError } from '../errors';
@@ -160,6 +161,7 @@ interface Deps {
   /** The web app's URL; Alert messages link to the KPI there. */
   appUrl?: string;
   onError?: (error: unknown) => void;
+  audit: AuditRecorder;
 }
 
 export { KPI_NAME_MAX };
@@ -175,7 +177,7 @@ export function kpiPath(kpiId: string): string {
 }
 
 export function createKpis(deps: Deps): Kpis {
-  const { db, clock, users, conversations, pinnedQueries, slack, jobs } = deps;
+  const { db, clock, users, conversations, pinnedQueries, slack, jobs, audit } = deps;
   const kpis = db.collection<KpiDoc>('kpis');
   const alerts = db.collection<KpiAlertDoc>('kpiAlerts');
 
@@ -189,6 +191,23 @@ export function createKpis(deps: Deps): Kpis {
     const doc = await alerts.findOne({ _id: id });
     if (!doc) throw new NotFoundError('KPI Alert not found.');
     return doc;
+  }
+
+  async function audited(
+    actor: string,
+    type: 'kpi' | 'kpi_alert',
+    action: string,
+    target: { id: string; name: string },
+    details?: Record<string, unknown>,
+  ) {
+    await audit.record({ actor, type, action, target: { id: target.id, name: target.name }, details });
+  }
+
+  /** Runs the Pinned Queries and records them in the audit log as run by `actor`. */
+  async function runPinned(actor: string, kpiId: string, pinned: PinnedAnswer) {
+    const run = await pinnedQueries.run(pinned);
+    await audit.record(...queryEntries(actor, run.queries, { kind: 'kpi', id: kpiId }));
+    return run;
   }
 
   /** Applies `fields` if the KPI is still in `status` (it may have changed since it was read). */
@@ -242,8 +261,8 @@ export function createKpis(deps: Deps): Kpis {
   }
 
   /** Runs the KPI's Pinned Query (never the LLM) and stores the number as the KPI's value. */
-  async function measure(kpi: KpiDoc & { pinned: PinnedAnswer }): Promise<ReturnType<typeof kpiNumber>> {
-    const measured = kpiNumber(kpi.pinned, await pinnedQueries.run(kpi.pinned));
+  async function measure(actor: string, kpi: KpiDoc & { pinned: PinnedAnswer }): Promise<ReturnType<typeof kpiNumber>> {
+    const measured = kpiNumber(kpi.pinned, await runPinned(actor, kpi._id, kpi.pinned));
     if (measured.ok) await kpis.updateOne({ _id: kpi._id }, { $set: { value: { value: measured.value, at: clock.now() } } });
     return measured;
   }
@@ -254,7 +273,7 @@ export function createKpis(deps: Deps): Kpis {
       `KPI: ${kpi.name} (${kpi.prompt})\nAlert condition: ${describeCondition(alert.condition)}\n` +
       `Current value: ${formatNumber(value)}\nPrevious value: ${previous === null ? 'none' : formatNumber(previous)}`;
     try {
-      const { text } = await generateText({
+      const { text, usage } = await generateText({
         model: await deps.llm.getModel(),
         system:
           'You write a Slack alert for a business KPI that just met its alert condition. In one or two short sentences, ' +
@@ -262,6 +281,9 @@ export function createKpis(deps: Deps): Kpis {
           'Use only the numbers given; never invent figures. Plain markdown, no headings.',
         prompt: facts,
       });
+      await audit.record(
+        ...tokenEntries(BOTLEY_ACTOR, usage, await deps.llm.choice(), 'alert_message', { kind: 'kpi_alert', id: alert._id }),
+      );
       if (text.trim()) return text.trim();
     } catch (error) {
       deps.onError?.(error);
@@ -287,7 +309,7 @@ export function createKpis(deps: Deps): Kpis {
     // A paused KPI's Alerts keep their schedule but skip the check.
     if (kpi.status !== 'active' || !kpi.pinned) return next();
 
-    const measured = await measure({ ...kpi, pinned: kpi.pinned });
+    const measured = await measure(BOTLEY_ACTOR, { ...kpi, pinned: kpi.pinned });
     const now = clock.now();
     if (!measured.ok) {
       // Said once, when checks start failing, not on every check.
@@ -346,6 +368,7 @@ export function createKpis(deps: Deps): Kpis {
         approvedAt: null,
       };
       await kpis.insertOne(doc);
+      await audited(actor, 'kpi', 'created', { id: doc._id, name: doc.name });
       return toKpi(doc);
     },
 
@@ -364,10 +387,10 @@ export function createKpis(deps: Deps): Kpis {
       const answer = approvableAnswer(messages);
       if (!answer) throw new ValidationError('The agent has no complete Answer to approve yet.');
       const pinned = pinnedQueries.pin(answer.answer);
-      const measured = kpiNumber(pinned, await pinnedQueries.run(pinned));
+      const measured = kpiNumber(pinned, await runPinned(actor, id, pinned));
       if (!measured.ok) throw new ValidationError(measured.error);
       const now = clock.now();
-      return setKpiIfStatus(id, 'draft', {
+      const approved = await setKpiIfStatus(id, 'draft', {
         status: 'active',
         pinned,
         value: { value: measured.value, at: now },
@@ -375,41 +398,50 @@ export function createKpis(deps: Deps): Kpis {
         approvedAt: now,
         updatedAt: now,
       });
+      await audited(actor, 'kpi', 'approved', approved);
+      return approved;
     },
 
-    async refresh(_actor, id) {
+    async refresh(actor, id) {
       const doc = await load(id);
       if (!doc.pinned) throw new ValidationError('Approve the KPI before refreshing it.');
-      const measured = await measure({ ...doc, pinned: doc.pinned });
+      const measured = await measure(actor, { ...doc, pinned: doc.pinned });
       if (!measured.ok) throw new ValidationError(measured.error);
       return toKpi(await load(id));
     },
 
-    async rename(_actor, id, name) {
+    async rename(actor, id, name) {
       const doc = await load(id);
       const trimmed = shorten(name);
       if (!trimmed) throw new ValidationError('Give the KPI a name.', { name: 'Required' });
-      return setKpiIfStatus(id, doc.status, { name: trimmed, updatedAt: clock.now() });
+      const renamed = await setKpiIfStatus(id, doc.status, { name: trimmed, updatedAt: clock.now() });
+      await audited(actor, 'kpi', 'renamed', renamed, { previousName: doc.name });
+      return renamed;
     },
 
-    async pause(_actor, id) {
+    async pause(actor, id) {
       const doc = await load(id);
       if (doc.status !== 'active') throw new ValidationError('Only an active KPI can be paused.');
-      return setKpiIfStatus(id, 'active', { status: 'paused', updatedAt: clock.now() });
+      const paused = await setKpiIfStatus(id, 'active', { status: 'paused', updatedAt: clock.now() });
+      await audited(actor, 'kpi', 'paused', paused);
+      return paused;
     },
 
-    async resume(_actor, id) {
+    async resume(actor, id) {
       const doc = await load(id);
       if (doc.status !== 'paused') throw new ValidationError('Only a paused KPI can be resumed.');
-      return setKpiIfStatus(id, 'paused', { status: 'active', updatedAt: clock.now() });
+      const resumed = await setKpiIfStatus(id, 'paused', { status: 'active', updatedAt: clock.now() });
+      await audited(actor, 'kpi', 'resumed', resumed);
+      return resumed;
     },
 
     async remove(actor, id) {
       await users.requireAdmin(actor);
       const owned = await alerts.find({ kpiId: id }, { projection: { _id: 1 } }).toArray();
-      await kpis.deleteOne({ _id: id });
+      const removed = await kpis.findOneAndDelete({ _id: id });
       await alerts.deleteMany({ kpiId: id });
       for (const { _id } of owned) await jobs.set(KPI_ALERT_JOB, _id, null);
+      if (removed) await audited(actor, 'kpi', 'deleted', { id, name: removed.name }, { alertsDeleted: owned.length });
     },
 
     async createAlert(actor, input) {
@@ -437,6 +469,7 @@ export function createKpis(deps: Deps): Kpis {
       };
       await alerts.insertOne(doc);
       await jobs.set(KPI_ALERT_JOB, doc._id, nextCheckAt);
+      await audited(actor, 'kpi_alert', 'created', { id: doc._id, name: doc.name }, { kpiId: kpi._id, condition: doc.condition });
       return toAlert(doc);
     },
 
@@ -448,7 +481,7 @@ export function createKpis(deps: Deps): Kpis {
       return (await alerts.find(kpiId ? { kpiId } : {}).sort({ updatedAt: -1 }).toArray()).map(toAlert);
     },
 
-    async updateAlert(_actor, id, input) {
+    async updateAlert(actor, id, input) {
       const doc = await loadAlert(id);
       const settings = await alertSettingsOf(doc.createdBy, input, await load(doc.kpiId));
       const now = clock.now();
@@ -457,18 +490,26 @@ export function createKpis(deps: Deps): Kpis {
       const rearm = isDeepStrictEqual(settings.condition, doc.condition) ? {} : { state: 'armed' as const };
       const updated = await setAlertIfStatus(id, doc.status, { ...settings, ...rearm, nextCheckAt, updatedAt: now });
       if (active) await jobs.set(KPI_ALERT_JOB, id, nextCheckAt);
+      await audited(actor, 'kpi_alert', 'updated', updated, {
+        kpiId: doc.kpiId,
+        condition: settings.condition,
+        schedule: settings.schedule,
+        timezone: settings.timezone,
+        destination: settings.destination,
+      });
       return updated;
     },
 
-    async pauseAlert(_actor, id) {
+    async pauseAlert(actor, id) {
       const doc = await loadAlert(id);
       if (doc.status !== 'active') throw new ValidationError('Only an active KPI Alert can be paused.');
       const updated = await setAlertIfStatus(id, 'active', { status: 'paused', nextCheckAt: null, updatedAt: clock.now() });
       await jobs.set(KPI_ALERT_JOB, id, null);
+      await audited(actor, 'kpi_alert', 'paused', updated);
       return updated;
     },
 
-    async resumeAlert(_actor, id) {
+    async resumeAlert(actor, id) {
       const doc = await loadAlert(id);
       if (doc.status !== 'paused') throw new ValidationError('Only a paused KPI Alert can be resumed.');
       const now = clock.now();
@@ -476,13 +517,15 @@ export function createKpis(deps: Deps): Kpis {
       // The value from before the pause is stale: a % change starts again from the next check.
       const updated = await setAlertIfStatus(id, 'paused', { status: 'active', lastValue: null, nextCheckAt, updatedAt: now });
       await jobs.set(KPI_ALERT_JOB, id, nextCheckAt);
+      await audited(actor, 'kpi_alert', 'resumed', updated);
       return updated;
     },
 
     async removeAlert(actor, id) {
       await users.requireAdmin(actor);
-      await alerts.deleteOne({ _id: id });
+      const removed = await alerts.findOneAndDelete({ _id: id });
       await jobs.set(KPI_ALERT_JOB, id, null);
+      if (removed) await audited(actor, 'kpi_alert', 'deleted', { id, name: removed.name }, { kpiId: removed.kpiId });
     },
   };
 }
@@ -520,6 +563,15 @@ function toKpi(doc: KpiDoc): Kpi {
 function toAlert(doc: KpiAlertDoc): KpiAlert {
   const { _id, ...rest } = doc;
   return { id: _id, ...rest };
+}
+
+/** Names of the draft KPIs made from this Conversation: approving them pins its latest Answer. */
+export async function draftKpisMadeFrom(db: Db, conversationId: string): Promise<string[]> {
+  const docs = await db
+    .collection<KpiDoc>('kpis')
+    .find({ status: 'draft', conversationId }, { projection: { name: 1 } })
+    .toArray();
+  return docs.map((d) => d.name);
 }
 
 export async function ensureKpiIndexes(db: Db) {

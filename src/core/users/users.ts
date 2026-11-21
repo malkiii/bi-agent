@@ -1,5 +1,6 @@
 import type { Db } from 'mongodb';
 import type { Clock } from '../ports';
+import type { AuditRecorder } from '../audit/audit';
 import { ForbiddenError, LastAdminError, NotFoundError, WrongWorkspaceError } from '../errors';
 
 export type Role = 'admin' | 'member';
@@ -48,7 +49,17 @@ export interface Users {
   setRole(actorSlackUserId: string, targetSlackUserId: string, role: Role): Promise<User>;
 }
 
-export function createUsers({ db, clock, config }: { db: Db; clock: Clock; config: UsersConfig }): Users {
+export function createUsers({
+  db,
+  clock,
+  config,
+  audit,
+}: {
+  db: Db;
+  clock: Clock;
+  config: UsersConfig;
+  audit: AuditRecorder;
+}): Users {
   const users = db.collection<User>('users');
   const project = { projection: { _id: 0 } } as const;
 
@@ -109,6 +120,15 @@ export function createUsers({ db, clock, config }: { db: Db; clock: Clock; confi
       if (before.role === 'admin' && role === 'member' && (await users.countDocuments({ role: 'admin' })) === 0) {
         await users.updateOne({ slackUserId: targetSlackUserId }, { $set: { role: 'admin' } });
         throw new LastAdminError();
+      }
+      if (before.role !== role) {
+        await audit.record({
+          actor: actorSlackUserId,
+          type: 'role',
+          action: 'changed',
+          target: { id: targetSlackUserId, name: before.name },
+          details: { from: before.role, role },
+        });
       }
       return { ...before, role };
     },

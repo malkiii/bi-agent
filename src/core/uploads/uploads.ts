@@ -18,6 +18,7 @@ import {
 } from '../data-sources/data-sources';
 import type { DriverRegistry } from '../data-sources/driver';
 import type { Users } from '../users/users';
+import type { AuditRecorder } from '../audit/audit';
 import { baseName, cellText, readUploadFile, type RawSheet } from './read-file';
 import {
   columnNames,
@@ -143,6 +144,7 @@ interface Deps {
   managed: ManagedDataSources;
   drivers: DriverRegistry;
   storage?: UploadStorage;
+  audit: AuditRecorder;
 }
 
 /** One sheet ready to write: validated name, mode and converted rows. */
@@ -155,7 +157,7 @@ interface PlannedSheet {
   existing?: CatalogDataset;
 }
 
-export function createUploads({ db, clock, users, managed, drivers, storage }: Deps): Uploads {
+export function createUploads({ db, clock, users, managed, drivers, storage, audit }: Deps): Uploads {
   const pending = db.collection<PendingUploadDoc>('pendingUploads');
   const uploaded = db.collection<UploadedDatasetDoc>('uploadedDatasets');
 
@@ -340,6 +342,13 @@ export function createUploads({ db, clock, users, managed, drivers, storage }: D
           { upsert: true, returnDocument: 'after' },
         );
         results.push(toUploaded(uploadsSource.id, dataset, doc!));
+        await audit.record({
+          actor,
+          type: 'dataset',
+          action: 'uploaded',
+          target: { id: p.datasetId, name: dataset.name },
+          details: { dataSourceId: uploadsSource.id, filename: upload.filename, sheet: p.sheet, mode: p.mode, rowCount: p.rows.length },
+        });
       }
 
       await pending.deleteOne({ _id: upload._id });
@@ -365,6 +374,13 @@ export function createUploads({ db, clock, users, managed, drivers, storage }: D
       await managed.removeDataset(source.id, datasetId);
       await uploaded.deleteOne({ _id: datasetId });
       await store.deleteDataset(datasetId);
+      await audit.record({
+        actor,
+        type: 'dataset',
+        action: 'deleted',
+        target: { id: datasetId, name: source.datasets.find((d) => d.id === datasetId)?.name ?? datasetId },
+        details: { dataSourceId: source.id },
+      });
     },
   };
 }

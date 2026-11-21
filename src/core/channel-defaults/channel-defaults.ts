@@ -4,6 +4,7 @@
  * keeps to these Data Sources while at least one of them can be queried (see `createAgentCatalog`).
  */
 import type { Db } from 'mongodb';
+import type { AuditRecorder } from '../audit/audit';
 import { existingDataSourceIds, type DataSources } from '../data-sources/data-sources';
 import { ValidationError } from '../errors';
 import type { Clock, SlackChannel, SlackGateway } from '../ports';
@@ -52,12 +53,14 @@ export function createChannelDefaults({
   users,
   dataSources,
   slack,
+  audit,
 }: {
   db: Db;
   clock: Clock;
   users: Users;
   dataSources: DataSources;
   slack: SlackGateway;
+  audit: AuditRecorder;
 }): ChannelDefaults {
   const docs = db.collection<ChannelDefaultDoc>('channelDefaults');
 
@@ -92,12 +95,22 @@ export function createChannelDefaults({
         updatedAt: clock.now(),
       };
       await docs.replaceOne({ _id: channel }, doc, { upsert: true });
+      await audit.record({
+        actor,
+        type: 'channel_default',
+        action: 'set',
+        target: { id: channel, name: doc.channelName },
+        details: { dataSourceIds: ids },
+      });
       return toChannelDefault(doc);
     },
 
     async remove(actor, channel) {
       await users.requireAdmin(actor);
-      await docs.deleteOne({ _id: channel });
+      const removed = await docs.findOneAndDelete({ _id: channel });
+      if (removed) {
+        await audit.record({ actor, type: 'channel_default', action: 'removed', target: { id: channel, name: removed.channelName } });
+      }
     },
 
     async slackChannels(actor) {

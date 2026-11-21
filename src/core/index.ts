@@ -21,10 +21,11 @@ import { createPinnedQueries, type PinnedQueries } from './pinned-queries/pinned
 import { createLlmSettings, type LlmSettings } from './llm-settings/llm-settings';
 import { createSavedQuestions, ensureSavedQuestionIndexes, type SavedQuestions } from './saved-questions/saved-questions';
 import { createChannelDefaults, type ChannelDefaults } from './channel-defaults/channel-defaults';
-import { createReports, ensureReportIndexes, type Reports } from './reports/reports';
+import { createReports, ensureReportIndexes, reportsMadeFrom, type Reports } from './reports/reports';
 import { createScheduler, ensureJobIndexes, type Scheduler } from './scheduler/scheduler';
-import { createKpis, ensureKpiIndexes, type Kpis } from './kpis/kpis';
+import { createKpis, draftKpisMadeFrom, ensureKpiIndexes, type Kpis } from './kpis/kpis';
 import { createHome, type Home } from './home/home';
+import { createAuditLog, createAuditRecorder, ensureAuditIndexes, type AuditLog } from './audit/audit';
 
 export * from './errors';
 export type * from './ports';
@@ -107,6 +108,8 @@ export type { Kpi, KpiAlert, KpiAlertInput, KpiAlertState, KpiAlertStatus, Kpis,
 export { describeCondition, formatNumber, type KpiAlertCondition } from './kpis/condition';
 export type { Scheduler } from './scheduler/scheduler';
 export type { Home, HomeOverview } from './home/home';
+export { AUDIT_EVENT_TYPES, AUDIT_PAGE_SIZE, BOTLEY_ACTOR } from './audit/audit';
+export type { AuditEntry, AuditEventType, AuditFilter, AuditLog, AuditPage } from './audit/audit';
 
 export interface AppCoreConfig {
   /** Only this Slack workspace may sign in. */
@@ -156,14 +159,17 @@ export interface AppCore {
   /** Runs due scheduled work (Report Runs); the worker calls `runDue()` on a timer. */
   scheduler: Scheduler;
   uploads: Uploads;
+  /** Admin only: Prompts, queries, token usage and changes to configuration and scheduled work. */
+  audit: AuditLog;
 }
 
 export function createAppCore(deps: AppCoreDeps): AppCore {
-  const users = createUsers(deps);
+  const audit = createAuditRecorder(deps);
+  const users = createUsers({ ...deps, audit });
   const secretBox = createSecretBox(deps.config.encryptionKey);
-  const dataSources = createDataSources({ db: deps.db, clock: deps.clock, users, drivers: deps.drivers, secretBox });
-  const llmSettings = createLlmSettings({ db: deps.db, clock: deps.clock, users, llm: deps.llm });
-  const channelDefaults = createChannelDefaults({ db: deps.db, clock: deps.clock, users, dataSources, slack: deps.slack });
+  const dataSources = createDataSources({ db: deps.db, clock: deps.clock, users, drivers: deps.drivers, secretBox, audit });
+  const llmSettings = createLlmSettings({ db: deps.db, clock: deps.clock, users, llm: deps.llm, audit });
+  const channelDefaults = createChannelDefaults({ db: deps.db, clock: deps.clock, users, dataSources, slack: deps.slack, audit });
   const conversations = createConversations({
     db: deps.db,
     clock: deps.clock,
@@ -172,9 +178,15 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     onAgentError: deps.onAgentError,
     channelDefault: (channel) => channelDefaults.forChannel(channel),
     combiner: deps.combiner,
+    audit,
+    users,
+    usesOf: async (conversationId) => [
+      ...(await reportsMadeFrom(deps.db, conversationId)).map((title) => `Report "${title}"`),
+      ...(await draftKpisMadeFrom(deps.db, conversationId)).map((name) => `KPI "${name}"`),
+    ],
   });
   const pinnedQueries = createPinnedQueries({ dataSources, clock: deps.clock, combiner: deps.combiner });
-  const savedQuestions = createSavedQuestions({ db: deps.db, clock: deps.clock, users, conversations, pinnedQueries });
+  const savedQuestions = createSavedQuestions({ db: deps.db, clock: deps.clock, users, conversations, pinnedQueries, audit });
   const { scheduler, jobs } = createScheduler({ db: deps.db, clock: deps.clock, onError: deps.onAgentError });
   const reports = createReports({
     db: deps.db,
@@ -188,6 +200,7 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     jobs,
     appUrl: deps.config.appUrl,
     onError: deps.onAgentError,
+    audit,
   });
   const kpis = createKpis({
     db: deps.db,
@@ -200,6 +213,7 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
     jobs,
     appUrl: deps.config.appUrl,
     onError: deps.onAgentError,
+    audit,
   });
   return {
     users,
@@ -229,7 +243,9 @@ export function createAppCore(deps: AppCoreDeps): AppCore {
       managed: createManagedDataSources({ db: deps.db, clock: deps.clock, secretBox }),
       drivers: deps.drivers,
       storage: deps.uploadStorage,
+      audit,
     }),
+    audit: createAuditLog({ db: deps.db, users }),
   };
 }
 
@@ -245,4 +261,5 @@ export async function prepareDatabase(db: Db): Promise<void> {
   await ensureKpiIndexes(db);
   await ensureJobIndexes(db);
   await ensureUploadIndexes(db);
+  await ensureAuditIndexes(db);
 }

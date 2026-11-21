@@ -7,6 +7,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { MongoServerError, type Db } from 'mongodb';
 import type { z } from 'zod';
 import { NotFoundError, ValidationError } from '../errors';
+import type { AuditRecorder } from '../audit/audit';
 import type { Clock } from '../ports';
 import type { SealedSecret, SecretBox } from '../secret-box';
 import type { Users } from '../users/users';
@@ -143,9 +144,10 @@ interface Deps {
   users: Users;
   drivers: DriverRegistry;
   secretBox: SecretBox;
+  audit: AuditRecorder;
 }
 
-export function createDataSources({ db, clock, users, drivers, secretBox }: Deps): DataSources {
+export function createDataSources({ db, clock, users, drivers, secretBox, audit }: Deps): DataSources {
   const collection = db.collection<DataSourceDoc>('dataSources');
   const oauthStates = db.collection<OAuthStateDoc>('oauthStates');
 
@@ -233,6 +235,16 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
     }
   }
 
+  /** A `data_source` entry; details never hold secrets. */
+  async function audited(
+    actor: string,
+    action: string,
+    source: { id: string; name: string },
+    details?: Record<string, unknown>,
+  ): Promise<void> {
+    await audit.record({ actor, type: 'data_source', action, target: { id: source.id, name: source.name }, details });
+  }
+
   async function save(id: string, update: Partial<DataSourceDoc>): Promise<DataSourceView> {
     try {
       const doc = await collection.findOneAndUpdate({ _id: id }, { $set: update }, { returnDocument: 'after' });
@@ -276,6 +288,7 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
       } catch (error) {
         throw duplicateName(error);
       }
+      await audited(actor, 'created', { id: doc._id, name }, { kind: doc.kind });
       return toView(doc);
     },
 
@@ -293,13 +306,18 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
         stored = Object.fromEntries(Object.entries(stored).filter(([k]) => secretKeys(kind).includes(k)));
       }
       const { name, config, secrets } = validate(input, stored);
-      return save(id, {
+      const view = await save(id, {
         name,
         config,
         sealedSecrets: secretBox.seal(JSON.stringify(secrets)),
         updatedAt: clock.now(),
         updatedBy: actor,
       });
+      await audited(actor, 'updated', view, {
+        ...(name !== existing.name ? { previousName: existing.name } : {}),
+        configChanged: JSON.stringify(config) !== JSON.stringify(existing.config),
+      });
+      return view;
     },
 
     async delete(actor, id) {
@@ -309,6 +327,7 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
       if (existing.createdBy === MANAGED_BY || drivers[existing.kind]?.managed) throw managedError(existing.name);
       const { deletedCount } = await collection.deleteOne({ _id: id });
       if (deletedCount === 0) throw new NotFoundError('Data Source not found.');
+      await audited(actor, 'deleted', { id, name: existing.name }, { kind: existing.kind });
     },
 
     async testConnection(actor, input) {
@@ -331,7 +350,9 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
       const previous = new Map(doc.datasets.map((d) => [d.id, d]));
       const datasets = introspected.map((d) => mergeCatalogDataset(previous.get(d.id), d));
       const now = clock.now();
-      return save(id, { datasets, schemaRefreshedAt: now, updatedAt: now, updatedBy: actor });
+      const view = await save(id, { datasets, schemaRefreshedAt: now, updatedAt: now, updatedBy: actor });
+      await audited(actor, 'schema_refreshed', view, { datasetCount: datasets.length });
+      return view;
     },
 
     async updateDatasetDetails(actor, id, datasetId, details) {
@@ -348,7 +369,15 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
         columns: dataset.columns.map((c) => withDetails(c, columnDetails[c.name] ?? {})),
       };
       const datasets = doc.datasets.map((d) => (d.id === datasetId ? updated : d));
-      return save(id, { datasets, updatedAt: clock.now(), updatedBy: actor });
+      const view = await save(id, { datasets, updatedAt: clock.now(), updatedBy: actor });
+      await audit.record({
+        actor,
+        type: 'dataset',
+        action: 'details_updated',
+        target: { id: datasetId, name: dataset.name },
+        details: { dataSourceId: id, dataSourceName: doc.name },
+      });
+      return view;
     },
 
     async setExposedDatasets(actor, id, datasetIds) {
@@ -361,7 +390,15 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
       }
       const chosen = new Set(datasetIds);
       const datasets = doc.datasets.map((d) => ({ ...d, exposed: chosen.has(d.id) }));
-      return save(id, { datasets, updatedAt: clock.now(), updatedBy: actor });
+      const view = await save(id, { datasets, updatedAt: clock.now(), updatedBy: actor });
+      await audit.record({
+        actor,
+        type: 'dataset',
+        action: 'exposure_changed',
+        target: { id: view.id, name: view.name },
+        details: { exposedDatasetIds: datasets.filter((d) => d.exposed).map((d) => d.id) },
+      });
+      return view;
     },
 
     async withDriver(id, work) {
@@ -415,11 +452,13 @@ export function createDataSources({ db, clock, users, drivers, secretBox }: Deps
       } catch (e) {
         throw new OAuthError(e instanceof Error ? e.message : String(e), id);
       }
-      return save(id, {
+      const view = await save(id, {
         sealedSecrets: secretBox.seal(JSON.stringify({ ...stored, ...withoutUndefined(tokens) })),
         updatedAt: clock.now(),
         updatedBy: actor,
       });
+      await audited(actor, 'oauth_connected', view);
+      return view;
     },
   };
 }

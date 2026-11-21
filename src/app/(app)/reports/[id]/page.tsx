@@ -14,7 +14,7 @@ import { AnswerView } from '@/web/chat/AnswerView';
 import chat from '@/web/chat/chat.module.css';
 import { PendingButton } from '@/web/components/PendingButton';
 import { requireUser } from '@/web/current-user';
-import { deleteReportAction, pauseOrResumeReportAction } from '@/web/reports/actions';
+import { deleteReportAction, deleteReportRunAction, pauseOrResumeReportAction } from '@/web/reports/actions';
 import { ApproveButton } from '@/web/reports/ApproveButton';
 import { formatInZone, statusLabel } from '@/web/reports/format';
 import styles from '@/web/reports/reports.module.css';
@@ -102,7 +102,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
         <ApprovalReview core={core} actor={user.slackUserId} report={report} />
       )}
 
-      <PastRuns runs={runs} />
+      <PastRuns runs={runs} reportId={report.id} canDelete={user.role === 'admin'} />
 
       {report.pinned && (
         <details>
@@ -137,7 +137,7 @@ function nextRunLabel(report: Report): string {
   }
 }
 
-function PastRuns({ runs }: { runs: ReportRunSummary[] }) {
+function PastRuns({ runs, reportId, canDelete }: { runs: ReportRunSummary[]; reportId: string; canDelete: boolean }) {
   return (
     <section className={styles.fieldset}>
       <h2>Past Report Runs</h2>
@@ -155,6 +155,14 @@ function PastRuns({ runs }: { runs: ReportRunSummary[] }) {
               </span>
               {run.error && <span className={chat.muted}>{run.error}</span>}
               {run.deliveryError && <span className={chat.muted}>Not posted to Slack: {run.deliveryError}</span>}
+              {canDelete && (
+                <form action={deleteReportRunAction}>
+                  <input type="hidden" name="id" value={run.id} />
+                  <input type="hidden" name="reportId" value={reportId} />
+                  <input type="hidden" name="back" value="report" />
+                  <PendingButton className="btn btn--ghost">Delete</PendingButton>
+                </form>
+              )}
             </li>
           ))}
         </ul>

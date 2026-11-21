@@ -6,6 +6,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { Db } from 'mongodb';
+import { queryEntries, type AuditRecorder } from '../audit/audit';
 import type { Conversations } from '../conversations/conversations';
 import { ForbiddenError, NotFoundError, ValidationError } from '../errors';
 import type { PinnedAnswer, PinnedQueries, PinnedRun } from '../pinned-queries/pinned-queries';
@@ -63,11 +64,12 @@ interface Deps {
   users: Users;
   conversations: Conversations;
   pinnedQueries: PinnedQueries;
+  audit: AuditRecorder;
 }
 
 export const SAVED_QUESTION_TITLE_MAX = 120;
 
-export function createSavedQuestions({ db, clock, users, conversations, pinnedQueries }: Deps): SavedQuestions {
+export function createSavedQuestions({ db, clock, users, conversations, pinnedQueries, audit }: Deps): SavedQuestions {
   const collection = db.collection<SavedQuestionDoc>('savedQuestions');
 
   async function loadVisible(actor: string, id: string): Promise<SavedQuestionDoc> {
@@ -115,6 +117,7 @@ export function createSavedQuestions({ db, clock, users, conversations, pinnedQu
     async run(actor, id) {
       const doc = await loadVisible(actor, id);
       const run = await pinnedQueries.run(doc.pinned);
+      await audit.record(...queryEntries(actor, run.queries, { kind: 'saved_question', id }));
       await collection.updateOne({ _id: id }, { $set: { lastRunAt: run.finishedAt } });
       return run;
     },

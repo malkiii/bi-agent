@@ -97,6 +97,7 @@ src/
     pinned-queries/ Pin an Answer's queries + layout, re-run them without the LLM (Saved Questions, Reports, KPIs)
     saved-questions/ Saved Questions: save an Answer, private/shared, re-run
     home/          The dashboard home's overview: recent Conversations, upcoming Report Runs, firing KPI Alerts, KPI tiles
+    audit/         The audit log: AuditRecorder (modules write) and AuditLog (admins read, filter)
     testing/       Test harness: real Mongo, FakeClock, InMemorySlackGateway, MockLlm
   adapters/        Production implementations of ports (system clock, llm.ts = the six LLM providers, ...)
   drivers/         Data Source drivers. index.ts = builtInDrivers registry
@@ -219,6 +220,17 @@ const run: PinnedRun = await core.pinnedQueries.run(pinned);
 - **To add a block type:** add it to `ResultBlock` and `PinnedBlock`, then add an entry `{ pin, dependsOn, rebuild }` to `pinnableBlocks`. The table is keyed by `ResultBlock['type']`, so it won't compile until you do.
 
 **`core.savedQuestions`** (`src/core/saved-questions/saved-questions.ts`, Mongo `savedQuestions`): `save(actor, { conversationId, answerMessageId, title?, visibility? })` (Participants only; title defaults to the Prompt), `get`, `list(actor, { scope: 'mine' | 'shared' })`, `run(actor, id)` (returns a `PinnedRun` and sets `lastRunAt`), `update(actor, id, { title?, visibility? })` (owner only) and `delete` (owner or admin). A private Saved Question is `NotFoundError` for everyone else. Web: "Save question" under each Answer with results, `/questions` (mine + shared) and `/questions/[id]` (Run, share/unshare, delete, Pinned Queries).
+
+## Audit log and admin cleanup
+
+`core.audit` (`src/core/audit/audit.ts`, Mongo `auditLog`, append-only) records, with actor and time:
+
+- `prompt` (every Prompt, web and Slack), `query` (every executed query, also Pinned Query re-runs: Data Source, query, duration, row count, ok/error) and `tokens` (provider, model, input/output tokens; for Answers, Report commentary and KPI Alert messages);
+- changes: `data_source`, `dataset` (details, uploads, deletions), `channel_default`, `role`, `llm_settings`, `report`, `report_run`, `kpi`, `kpi_alert`, `conversation`.
+
+Dataset exposure changes are `dataset` entries (`exposure_changed`, target = the Data Source). Scheduled work (Report Runs, KPI Alert checks) is recorded as `BOTLEY_ACTOR`. Modules get an `AuditRecorder` from `createAppCore` and call `audit.record(...)` after a change succeeds; `queryEntries` and `tokenEntries` build usage entries. **A new use case that changes configuration or scheduled work must record an entry** (add its type to `AUDIT_EVENT_TYPES`). Details never hold secrets.
+
+Admins only: `audit.list(actor, { actor?, type?, from?, to?, page?, pageSize? })` (newest first; `to` exclusive; 50 per page, at most 200) at `/admin/audit`, and the cleanup actions `conversations.remove` / `conversations.listAll` (`/admin/conversations`; refused with ValidationError while a Report or draft KPI was made from the Conversation, since approving pins its latest Answer again), `reports.removeRun` (on the Report and Report Run pages) and `uploads.delete` (removes the Parquet file; `/uploads`).
 
 ## Data Source drivers
 

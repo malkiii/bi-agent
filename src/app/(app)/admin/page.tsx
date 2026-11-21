@@ -21,8 +21,14 @@ export default function AdminPage() {
         <li>
           <Link href="/admin/settings">Settings</Link>: the LLM provider and model.
         </li>
+        <li>
+          <Link href="/admin/audit">Audit log</Link>: Prompts, queries, token usage and who changed what.
+        </li>
+        <li>
+          <Link href="/admin/conversations">Conversations</Link>: delete Conversations. Report Runs are deleted on their Report, uploaded
+          Datasets on <Link href="/uploads">Uploads</Link>.
+        </li>
       </ul>
-      <p>The audit log will live here too.</p>
     </section>
   );
 }
