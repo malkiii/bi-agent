@@ -172,8 +172,8 @@ function rawText(text: string): SlackBlock {
   return { type: 'raw_text', text: text.length > MAX_CELL_CHARS ? `${text.slice(0, MAX_CELL_CHARS - 1)}…` : text };
 }
 
+/** Slack Table cells must be `raw_text` or `rich_text`; numbers are right-aligned via `column_settings`. */
 function cell(value: unknown): SlackBlock {
-  if (typeof value === 'number' && Number.isFinite(value)) return { type: 'raw_number', value };
   return rawText(formatValue(value));
 }
 

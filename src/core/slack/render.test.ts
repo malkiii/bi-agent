@@ -81,7 +81,7 @@ describe('renderAnswer', () => {
           ],
           [
             { type: 'raw_text', text: 'north' },
-            { type: 'raw_number', value: 17.75 },
+            { type: 'raw_text', text: '17.75' },
           ],
           [
             { type: 'raw_text', text: 'south' },
