@@ -38,7 +38,7 @@ export interface SlackPrompt {
 export interface SlackBot {
   /**
    * 👀 on the message, a placeholder reply in the thread that shows progress, then the Answer
-   * edited into the placeholder (❌ and a readable error on failure). The thread is the
+   * edited into the placeholder and 👀 swapped for ✅ (for ❌ and a readable error on failure). The thread is the
    * Conversation; the poster becomes a Participant. Duplicate deliveries are ignored.
    */
   handlePrompt(prompt: SlackPrompt): Promise<void>;
@@ -137,7 +137,9 @@ export function createSlackBot({ db, clock, slack, conversations, appUrl, onErro
         failure = error instanceof AppError ? error.message : UNEXPECTED_ERROR;
         await edit(renderFailure(failure));
       }
-      if (failure !== undefined) await slack.addReaction(message, 'x').catch(onError);
+      // 👀 gives way to the outcome: ✅ answered, ❌ failed.
+      await slack.removeReaction(message, 'eyes').catch(onError);
+      await slack.addReaction(message, failure === undefined ? 'white_check_mark' : 'x').catch(onError);
     },
 
     async showQuery({ triggerId, value }) {
