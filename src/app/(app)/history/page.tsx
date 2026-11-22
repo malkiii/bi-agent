@@ -91,11 +91,6 @@ export default async function HistoryPage({
                 </p>
               </div>
               <div className={styles.itemActions}>
-                {c.source.kind === 'slack' && (
-                  <Link href={`/chat/fork/${c.id}`} className="btn btn--cyan">
-                    Open in dashboard
-                  </Link>
-                )}
                 <DeleteConversationButton conversationId={c.id} back={here} className="btn btn--ghost" />
               </div>
             </li>
