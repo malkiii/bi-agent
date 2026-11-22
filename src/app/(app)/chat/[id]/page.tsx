@@ -16,7 +16,7 @@ export const metadata = { title: 'Chat · BIBot' };
 /**
  * A saved Conversation, reopened. Only its Participants can see it. Web Conversations
  * continue here; Slack ones are shown read-only with "Open in dashboard" (a Fork). Any
- * Participant can delete it (the button sits below the chat).
+ * Participant can delete it. Both buttons sit below the chat: Open in dashboard left, Delete right.
  */
 export default async function ConversationPage({
   params,
@@ -41,12 +41,6 @@ export default async function ConversationPage({
       <header className={styles.conversationHeader}>
         <h1>{conversation.title || 'New Conversation'}</h1>
         <div className={`actions ${styles.headerActions}`}>
-          {slack && (
-            <form action={forkConversationAction}>
-              <input type="hidden" name="conversationId" value={conversation.id} />
-              <PendingButton className="btn btn--cyan">Open in dashboard</PendingButton>
-            </form>
-          )}
           <Link href="/chat" className="btn btn--ghost">
             New chat
           </Link>
@@ -74,6 +68,12 @@ export default async function ConversationPage({
         lockedDataSourceIds={conversation.lockedDataSourceIds}
       />
       <footer className={styles.conversationFooter}>
+        {slack && (
+          <form action={forkConversationAction} className={styles.footerStart}>
+            <input type="hidden" name="conversationId" value={conversation.id} />
+            <PendingButton className="btn btn--cyan">Open in dashboard</PendingButton>
+          </form>
+        )}
         {error && (
           <p role="alert" className={styles.error}>
             {error}

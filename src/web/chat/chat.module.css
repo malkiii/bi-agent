@@ -376,6 +376,10 @@
   border-top: 2px dashed var(--color-border);
 }
 
+.conversationFooter .footerStart {
+  margin-right: auto;
+}
+
 .conversationFooter .error {
   flex: 1;
 }
