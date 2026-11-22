@@ -52,12 +52,13 @@ function scriptNorthAnswer() {
 type Block = { type: string; [key: string]: unknown };
 
 describe('answering an @mention in a channel', () => {
-  test('👀 on the Prompt, then a placeholder in the thread that is edited into the Answer', async () => {
+  test('👀 on the Prompt, then a placeholder in the thread that is edited into the Answer, then 👀 swapped for ✅', async () => {
     scriptNorthAnswer();
 
     await h.core.slackBot.handlePrompt({ userId: ADA, channel: CHANNEL, ts: '100.1', text: `<@${BOT}> north sales?`, botUserId: BOT });
 
-    expect(h.slack.reactions).toEqual([{ channel: CHANNEL, ts: '100.1', emoji: 'eyes' }]);
+    expect(h.slack.reactionLog.map((r) => `${r.action} ${r.emoji}`)).toEqual(['added eyes', 'removed eyes', 'added white_check_mark']);
+    expect(h.slack.reactions).toEqual([{ channel: CHANNEL, ts: '100.1', emoji: 'white_check_mark' }]);
     const replies = h.slack.thread(CHANNEL, '100.1');
     expect(replies).toHaveLength(1);
     const reply = replies[0]!;
@@ -105,7 +106,7 @@ describe('answering an @mention in a channel', () => {
     expect(conversation?.participants).toEqual([ADA, BOB]);
     expect(await h.core.conversations.list(ADA)).toHaveLength(1);
     expect(h.slack.thread(CHANNEL, '100.1').map((m) => m.text)).toEqual(['North sold *17.75*.', 'Same as before.']);
-    expect(h.slack.reactions.at(-1)).toEqual({ channel: CHANNEL, ts: '100.5', emoji: 'eyes' });
+    expect(h.slack.reactions.at(-1)).toEqual({ channel: CHANNEL, ts: '100.5', emoji: 'white_check_mark' });
   });
 
   test('the same Slack event delivered twice is answered once', async () => {
@@ -138,22 +139,19 @@ describe('DMs', () => {
 });
 
 describe('failures', () => {
-  test('a failed Answer gets ❌ and a readable error in place of the placeholder', async () => {
+  test('a failed Answer swaps 👀 for ❌ and shows a readable error in place of the placeholder', async () => {
     h.llm.script();
 
     await h.core.slackBot.handlePrompt({ userId: ADA, channel: CHANNEL, ts: '100.1', text: `<@${BOT}> anything`, botUserId: BOT });
 
-    expect(h.slack.reactions).toEqual([
-      { channel: CHANNEL, ts: '100.1', emoji: 'eyes' },
-      { channel: CHANNEL, ts: '100.1', emoji: 'x' },
-    ]);
+    expect(h.slack.reactions).toEqual([{ channel: CHANNEL, ts: '100.1', emoji: 'x' }]);
     expect(h.slack.thread(CHANNEL, '100.1')).toMatchObject([{ text: expect.stringContaining('Sorry') }]);
   });
 
   test('a rejected Prompt (too long) gets ❌ and the reason', async () => {
     await h.core.slackBot.handlePrompt({ userId: ADA, channel: CHANNEL, ts: '100.1', text: 'x'.repeat(9_000) });
 
-    expect(h.slack.reactions.at(-1)).toMatchObject({ emoji: 'x' });
+    expect(h.slack.reactions.map((r) => r.emoji)).toEqual(['x']);
     expect(h.slack.thread(CHANNEL, '100.1')).toMatchObject([{ text: expect.stringMatching(/limited to/) }]);
   });
 });
@@ -245,7 +243,7 @@ describe('charts and long tables', () => {
     const thread = h.slack.thread(CHANNEL, '100.1');
     expect(thread).toHaveLength(2);
     expect(thread[1]!.text).toMatch(/could not attach/i);
-    expect(h.slack.reactions.map((r) => r.emoji)).toEqual(['eyes']);
+    expect(h.slack.reactions.map((r) => r.emoji)).toEqual(['white_check_mark']);
   });
 });
 

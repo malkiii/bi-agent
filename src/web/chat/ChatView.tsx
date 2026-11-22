@@ -3,7 +3,6 @@
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useBIBot } from '@/web/bibot/BIBotProvider';
-import { CopyButton } from '@/web/components/CopyButton';
 import { AnswerView } from './AnswerView';
 import type { ChatItem } from './items';
 import { DataSourcePicker, type DataSourceOption } from './DataSourcePicker';
@@ -147,7 +146,6 @@ export function ChatView({
             item.kind === 'prompt' ? (
               <li key={item.id} className={styles.prompt}>
                 <p>{item.text}</p>
-                <CopyButton text={item.text} label="Copy prompt" />
               </li>
             ) : (
               <li key={item.id}>

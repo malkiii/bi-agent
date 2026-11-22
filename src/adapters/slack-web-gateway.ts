@@ -28,6 +28,14 @@ export function createSlackWebGateway(client: WebClient): SlackGateway {
       }
     },
 
+    async removeReaction({ channel, ts }, emoji) {
+      try {
+        await client.reactions.remove({ channel, timestamp: ts, name: emoji });
+      } catch (error) {
+        if ((error as { data?: { error?: string } }).data?.error !== 'no_reaction') throw error;
+      }
+    },
+
     async isBotInChannel(channel) {
       if (channel.startsWith('D')) return true;
       try {

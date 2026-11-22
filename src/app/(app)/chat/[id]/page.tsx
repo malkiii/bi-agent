@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { NotFoundError } from '@/core';
 import { forkConversationAction } from '@/web/chat/actions';
 import { ChatView } from '@/web/chat/ChatView';
+import { DeleteConversationButton } from '@/web/chat/DeleteConversationButton';
 import styles from '@/web/chat/chat.module.css';
 import { chatDataSources } from '@/web/chat/data-sources';
 import { toChatItems } from '@/web/chat/items';
@@ -14,10 +15,18 @@ export const metadata = { title: 'Chat · BIBot' };
 
 /**
  * A saved Conversation, reopened. Only its Participants can see it. Web Conversations
- * continue here; Slack ones are shown read-only with "Open in dashboard" (a Fork).
+ * continue here; Slack ones are shown read-only with "Open in dashboard" (a Fork). Any
+ * Participant can delete it (the button sits below the chat).
  */
-export default async function ConversationPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ConversationPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { id } = await params;
+  const { error } = await searchParams;
   const user = await requireUser();
   const core = await getCore();
   const found = await core.conversations.get(user.slackUserId, id).catch((error: unknown) => {
@@ -64,6 +73,14 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
         dataSources={slack ? [] : await chatDataSources(core, conversation.lockedDataSourceIds)}
         lockedDataSourceIds={conversation.lockedDataSourceIds}
       />
+      <footer className={styles.conversationFooter}>
+        {error && (
+          <p role="alert" className={styles.error}>
+            {error}
+          </p>
+        )}
+        <DeleteConversationButton conversationId={conversation.id} back={`/chat/${conversation.id}`} />
+      </footer>
     </div>
   );
 }

@@ -13,7 +13,10 @@ export interface RecordedReaction extends SlackMessageRef {
 /** Records everything the App Core sends to Slack. Assert on `messages`, `reactions` and `modals`. */
 export class InMemorySlackGateway implements SlackGateway {
   readonly messages: RecordedMessage[] = [];
+  /** Reactions currently on messages (removed ones are gone). */
   readonly reactions: RecordedReaction[] = [];
+  /** Every reaction added or removed, in order. */
+  readonly reactionLog: (RecordedReaction & { action: 'added' | 'removed' })[] = [];
   readonly modals: { triggerId: string; view: unknown }[] = [];
   readonly uploads: SlackFileUpload[] = [];
   /** Set to make `uploadFiles` reject, like Slack without the `files:write` scope. */
@@ -41,7 +44,18 @@ export class InMemorySlackGateway implements SlackGateway {
   }
 
   async addReaction(ref: SlackMessageRef, emoji: string): Promise<void> {
-    this.reactions.push({ ...ref, emoji });
+    if (!this.hasReaction(ref, emoji)) this.reactions.push({ ...ref, emoji });
+    this.reactionLog.push({ ...ref, emoji, action: 'added' });
+  }
+
+  async removeReaction(ref: SlackMessageRef, emoji: string): Promise<void> {
+    const i = this.reactions.findIndex((r) => r.channel === ref.channel && r.ts === ref.ts && r.emoji === emoji);
+    if (i >= 0) this.reactions.splice(i, 1);
+    this.reactionLog.push({ ...ref, emoji, action: 'removed' });
+  }
+
+  private hasReaction(ref: SlackMessageRef, emoji: string): boolean {
+    return this.reactions.some((r) => r.channel === ref.channel && r.ts === ref.ts && r.emoji === emoji);
   }
 
   async isBotInChannel(channel: string): Promise<boolean> {

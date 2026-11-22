@@ -12,6 +12,7 @@ export const unconfiguredSlack: SlackGateway = {
   postMessage: async () => notYet('SlackGateway'),
   updateMessage: async () => notYet('SlackGateway'),
   addReaction: async () => notYet('SlackGateway'),
+  removeReaction: async () => notYet('SlackGateway'),
   isBotInChannel: async () => notYet('SlackGateway'),
   openModal: async () => notYet('SlackGateway'),
   uploadFiles: async () => notYet('SlackGateway'),

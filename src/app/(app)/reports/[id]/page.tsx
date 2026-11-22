@@ -79,7 +79,6 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
         <dt>Prompt</dt>
         <dd className={chat.copyable}>
           <span>“{report.prompt}”</span>
-          <CopyButton text={report.prompt} label="Copy prompt" />
         </dd>
         <dt>Schedule</dt>
         <dd>
