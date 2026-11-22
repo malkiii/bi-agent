@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export default async function SettingsPage() {
   const me = await requireUser();
   const llm = await (await getCore()).llmSettings.get(me.slackUserId);
-  const initialProvider = llm.active?.provider ?? llm.defaultProvider ?? llm.providers[0] ?? '';
+  const initialProvider = llm.active?.provider ?? llm.providers[0] ?? '';
   const initialModels = initialProvider ? await listLlmModels(initialProvider) : { models: [] };
   return (
     <section className="card">
@@ -24,9 +24,12 @@ export default async function SettingsPage() {
         <>
           <p>
             {llm.active
-              ? `New Prompts use ${llm.labels[llm.active.provider] ?? llm.active.provider} ${llm.active.model}.`
-              : 'No model is chosen yet, so Prompts fail until you choose one.'}{' '}
-            Providers appear here once their API key (or server URL) is in <code>.env</code>.
+              ? `New Prompts use ${llm.labels[llm.active.provider] ?? llm.active.provider} ${llm.active.model}${
+                  llm.chosen ? '.' : ': the default, as no model is chosen yet.'
+                }`
+              : 'No model is chosen yet and there is no default, so Prompts fail until you choose one.'}{' '}
+            Providers appear here once their API key (or server URL) is in <code>.env</code>; switch between them
+            any time.
           </p>
           <LlmForm providers={llm.providers} labels={llm.labels} active={llm.active} initialProvider={initialProvider} initialModels={initialModels} />
         </>

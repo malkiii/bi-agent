@@ -1,10 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import type { UploadColumnType, UploadMode, UploadPreview } from '@/core';
 import { confirmUploadAction } from './actions';
 import styles from '@/web/catalog/catalog.module.css';
+import dropStyles from './uploads.module.css';
+
+/** CSV, XLSX and SQLite (src/core/uploads/read-file.ts). */
+const ACCEPTED = /\.(csv|xlsx|sqlite|sqlite3|db|db3)$/i;
 
 const TYPES: readonly UploadColumnType[] = ['string', 'integer', 'number', 'boolean', 'date', 'datetime'];
 const TYPE_LABELS: Record<UploadColumnType, string> = {
@@ -37,6 +41,10 @@ export function UploadForm({ existingDatasets, maxBytes }: { existingDatasets: s
   const [notice, setNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [saving, startSaving] = useTransition();
+  const [dragging, setDragging] = useState(false);
+  // dragenter/dragleave fire for every child element; count them so the highlight doesn't flicker.
+  const dragDepth = useRef(0);
+  const busy = uploading || saving;
 
   async function upload(file: File) {
     setError(null);
@@ -103,23 +111,74 @@ export function UploadForm({ existingDatasets, maxBytes }: { existingDatasets: s
     <section className={`card ${styles.stack}`}>
       <h2>Upload a file</h2>
       <p className={styles.muted}>
-        CSV or XLSX, up to 50 MB. The first row holds the column names; each sheet of a workbook becomes its own
-        Dataset, shared with everyone in the Uploads Data Source.
+        The first row holds the column names; each sheet of a workbook, or table of a SQLite
+        database, becomes its own Dataset, shared with everyone in the Uploads Data Source.
       </p>
-      <label className={styles.field}>
-        <span>File</span>
+      <label
+        className={dropStyles.dropzone}
+        data-dragging={dragging}
+        data-busy={busy}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          if (busy) return;
+          dragDepth.current += 1;
+          setDragging(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = busy ? 'none' : 'copy';
+        }}
+        onDragLeave={() => {
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (dragDepth.current === 0) setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragDepth.current = 0;
+          setDragging(false);
+          if (busy) return;
+          const file = e.dataTransfer.files[0];
+          if (!file) return;
+          if (!ACCEPTED.test(file.name)) {
+            setNotice(null);
+            setError(`${file.name} isn't a CSV, XLSX or SQLite file.`);
+            return;
+          }
+          void upload(file);
+        }}
+      >
         <input
           type="file"
-          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          disabled={uploading || saving}
+          className="sr-only"
+          accept=".csv,.xlsx,.sqlite,.sqlite3,.db,.db3,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.sqlite3"
+          disabled={busy}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void upload(file);
             e.target.value = '';
           }}
         />
+        <span className={dropStyles.icon} aria-hidden="true">
+          {uploading ? (
+            <span className={dropStyles.spinner} />
+          ) : (
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 16V4M7 9l5-5 5 5" />
+              <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+            </svg>
+          )}
+        </span>
+        <span className={dropStyles.title}>
+          {uploading ? 'Reading the file…' : dragging ? 'Drop it here' : 'Drag a file here, or click to choose one'}
+        </span>
+        <span className={dropStyles.hint}>
+          <span className="tag">CSV</span> <span className="tag">XLSX</span> <span className="tag">SQLite</span> up to {formatMb(maxBytes)}
+        </span>
       </label>
-      {uploading && <p className={styles.muted}>Reading the file…</p>}
+      {/* Drag-and-drop is an extra; screen readers announce progress here. */}
+      <p className="sr-only" aria-live="polite">
+        {uploading ? 'Reading the file…' : ''}
+      </p>
       {error && <p className={styles.error}>{error}</p>}
       {notice && <p className={styles.notice}>{notice}</p>}
 

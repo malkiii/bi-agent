@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite';
 import ExcelJS from 'exceljs';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { ForbiddenError, ValidationError } from '@/core';
@@ -173,6 +174,50 @@ describe('uploading an XLSX workbook', () => {
   });
 });
 
+describe('uploading a SQLite database', () => {
+  function sqliteFile(sql: string): Uint8Array {
+    const db = new DatabaseSync(':memory:');
+    db.exec(sql);
+    const content = db.serialize();
+    db.close();
+    return content;
+  }
+
+  test('each table and view becomes a sheet, and confirming stores them as Datasets', async () => {
+    const content = sqliteFile(`
+      CREATE TABLE orders (id INTEGER PRIMARY KEY, placed TEXT, total REAL, note TEXT);
+      INSERT INTO orders VALUES (1, '2026-01-05', 10.5, NULL), (2, '2026-01-06', 20, 'rush');
+      CREATE TABLE "Sales Reps" (name TEXT, active INTEGER);
+      INSERT INTO "Sales Reps" VALUES ('Ada', 1);
+      CREATE VIEW big_orders AS SELECT id, total FROM orders WHERE total > 15;
+    `);
+
+    const preview = await h.core.uploads.preview(MEMBER, { filename: 'shop.sqlite', content });
+
+    expect(preview.sheets.map((s) => [s.sheet, s.datasetName, s.rowCount, s.columns.map((c) => `${c.name}:${c.type}`)])).toEqual([
+      ['Sales Reps', 'shop_sales_reps', 1, ['name:string', 'active:integer']],
+      ['big_orders', 'shop_big_orders', 1, ['id:integer', 'total:integer']],
+      ['orders', 'shop_orders', 2, ['id:integer', 'placed:date', 'total:number', 'note:string']],
+    ]);
+
+    await h.core.uploads.confirm(MEMBER, {
+      uploadId: preview.uploadId,
+      sheets: [{ sheet: 'orders', datasetName: 'shop_orders', mode: 'new' }],
+    });
+
+    expect((await query('SELECT id, placed, total, note FROM shop_orders ORDER BY id')).rows).toEqual([
+      [1, '2026-01-05', 10.5, null],
+      [2, '2026-01-06', 20, 'rush'],
+    ]);
+  });
+
+  test('a file that is not a SQLite database is refused with a clear message', async () => {
+    await expect(h.core.uploads.preview(MEMBER, { filename: 'shop.db', content: csv('a,b\n1,2') })).rejects.toThrow(
+      /could not be read as a SQLite database/,
+    );
+  });
+});
+
 describe('re-uploading to an existing Dataset', () => {
   async function upload(actor: string, text: string, mode: 'new' | 'replace' | 'append', columnTypes?: Record<string, 'string'>) {
     const preview = await h.core.uploads.preview(actor, { filename: 'sales.csv', content: csv(text) });
@@ -275,9 +320,9 @@ describe('limits', () => {
     );
   });
 
-  test('only CSV and XLSX files are accepted', async () => {
+  test('only CSV, XLSX and SQLite files are accepted', async () => {
     await expect(h.core.uploads.preview(MEMBER, { filename: 'notes.txt', content: csv('a') })).rejects.toThrow(
-      /\.csv or \.xlsx/,
+      /\.csv, \.xlsx or SQLite/,
     );
   });
 

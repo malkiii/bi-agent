@@ -1,6 +1,6 @@
 # Uploaded Datasets are Parquet files queried by in-memory DuckDB
 
-Uploaded spreadsheets and CSVs are converted to one Parquet file per Dataset on a shared Docker volume. Each process (`web` and `worker`) queries those files read-only through its own in-memory DuckDB. We chose DuckDB because the agent writes SQL well and DuckDB is fast on tabular data without an extra service. We store uploads as Parquet files rather than one `.duckdb` database file because a DuckDB file allows only one writing process, and both containers need to query uploads.
+Uploaded spreadsheets, CSVs and SQLite tables are converted to one Parquet file per Dataset on a shared Docker volume. Each process (`web` and `worker`) queries those files read-only through its own in-memory DuckDB. We chose DuckDB because the agent writes SQL well and DuckDB is fast on tabular data without an extra service. We store uploads as Parquet files rather than one `.duckdb` database file because a DuckDB file allows only one writing process, and both containers need to query uploads.
 
 ## Considered Options
 

@@ -4,6 +4,7 @@ import { AUDIT_EVENT_TYPES, BIBOT_ACTOR, type AuditEntry, type AuditEventType, t
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 import styles from './audit.module.css';
+import { CopyButton } from '@/web/components/CopyButton';
 
 export const metadata = { title: 'Audit log · BIBot' };
 export const dynamic = 'force-dynamic';
@@ -174,14 +175,25 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
 /** A readable summary for usage entries; the raw details for everything else. */
 function EntryDetails({ entry }: { entry: AuditEntry }) {
   const d = entry.details;
-  if (entry.type === 'prompt') return <span>“{String(d.prompt ?? '')}”</span>;
+  if (entry.type === 'prompt') {
+    const prompt = String(d.prompt ?? '');
+    return (
+      <div className={styles.copyable}>
+        <span>“{prompt}”</span>
+        <CopyButton text={prompt} label="Copy prompt" />
+      </div>
+    );
+  }
   if (entry.type === 'query') {
     return (
       <div>
         <div>
           {String(d.dataSourceName)} · {d.ok ? `${d.rowCount} rows` : 'failed'} · {String(d.durationMs)} ms
         </div>
-        <code className={styles.query}>{String(d.query ?? '')}</code>
+        <div className={styles.copyable}>
+          <code className={styles.query}>{String(d.query ?? '')}</code>
+          <CopyButton text={String(d.query ?? '')} label="Copy query" />
+        </div>
         {typeof d.error === 'string' && <div className={styles.muted}>{d.error}</div>}
       </div>
     );

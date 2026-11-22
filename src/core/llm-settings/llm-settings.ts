@@ -6,14 +6,17 @@ import type { Users } from '../users/users';
 import type { AuditRecorder } from '../audit/audit';
 
 export interface LlmSettingsView {
-  /** The provider and model new Prompts use; null until an admin chooses one. */
+  /**
+   * The provider and model new Prompts use: the admin's choice, else the first configured
+   * provider that has a default model; null when neither is available.
+   */
   active: LlmChoice | null;
-  /** Providers with configured credentials; the only ones an admin may choose. */
+  /** Whether `active` is an admin's choice (false: the default, or nothing). */
+  chosen: boolean;
+  /** Providers with configured credentials (in `.env`); the only ones an admin may choose. */
   providers: readonly string[];
   /** Each offered provider's display name. */
   labels: Record<string, string>;
-  /** The provider to pre-select when nothing is chosen yet (LLM_PROVIDER); null when unset. */
-  defaultProvider: string | null;
 }
 
 /**
@@ -38,7 +41,7 @@ export interface LlmSettings {
 /** Resolves the model for a new Prompt (the App Core's view of the active LLM). */
 export interface ActiveLanguageModel {
   getModel(): Promise<LanguageModel>;
-  /** The provider and model `getModel` builds now; null when none is chosen. */
+  /** The provider and model `getModel` builds now; null when none is available. */
   choice(): Promise<LlmChoice | null>;
 }
 
@@ -52,10 +55,10 @@ interface LlmSettingsDoc {
 
 export const MAX_MODEL_LENGTH = 200;
 
-/** No provider and model are chosen, so a Prompt cannot be answered. */
+/** No provider and model are chosen or available by default, so a Prompt cannot be answered. */
 export class NoLlmConfiguredError extends AppError {
   constructor() {
-    super('no_llm_configured', 'No language model is chosen yet: an admin can choose one in Admin > Settings.');
+    super('no_llm_configured', 'No language model is available yet: an admin can choose one in Admin > Settings.');
   }
 }
 
@@ -85,20 +88,24 @@ export function createLlmSettings({
 } {
   const docs = db.collection<LlmSettingsDoc>('appSettings');
 
-  /** The stored choice while its provider is still configured. */
-  async function resolve(): Promise<LlmChoice | null> {
+  /** The stored choice while its provider is still configured, else the first provider (in order) with a default model. */
+  async function resolve(): Promise<{ active: LlmChoice | null; chosen: boolean }> {
     const doc = await docs.findOne({ _id: 'llm' });
-    return doc && llm.configuredProviders().includes(doc.provider) ? { provider: doc.provider, model: doc.model } : null;
+    const providers = llm.configuredProviders();
+    if (doc && providers.includes(doc.provider)) return { active: { provider: doc.provider, model: doc.model }, chosen: true };
+    for (const provider of providers) {
+      const model = await llm.defaultModel(provider);
+      if (model) return { active: { provider, model }, chosen: false };
+    }
+    return { active: null, chosen: false };
   }
 
   async function view(): Promise<LlmSettingsView> {
     const providers = llm.configuredProviders();
-    const defaultProvider = llm.defaultProvider();
     return {
-      active: await resolve(),
+      ...(await resolve()),
       providers,
       labels: Object.fromEntries(providers.map((p) => [p, llm.providerLabel(p)])),
-      defaultProvider: defaultProvider && providers.includes(defaultProvider) ? defaultProvider : null,
     };
   }
 
@@ -146,12 +153,12 @@ export function createLlmSettings({
     },
     active: {
       async getModel() {
-        const active = await resolve();
+        const { active } = await resolve();
         if (!active) throw new NoLlmConfiguredError();
         return llm.getModel(active);
       },
       async choice() {
-        return resolve();
+        return (await resolve()).active;
       },
     },
   };

@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ error: 'The upload could not be read. Try again.' }, { status: 400 });
   }
-  if (!(file instanceof File)) return Response.json({ error: 'Choose a CSV or XLSX file.' }, { status: 400 });
+  if (!(file instanceof File)) return Response.json({ error: 'Choose a CSV, XLSX or SQLite file.' }, { status: 400 });
   if (file.size > MAX_UPLOAD_BYTES) return Response.json({ error: TOO_LARGE }, { status: 413 });
 
   try {

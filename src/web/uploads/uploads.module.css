@@ -1,0 +1,110 @@
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 180px;
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  cursor: pointer;
+  background-color: var(--color-bg);
+  background-image: radial-gradient(var(--color-muted) 1px, transparent 1px);
+  background-size: 16px 16px;
+  border: var(--border-width) dashed var(--color-border);
+  border-radius: var(--radius);
+  transition:
+    transform var(--ease-medium),
+    box-shadow var(--ease-medium),
+    background-color var(--ease-medium),
+    border-style var(--ease-medium);
+}
+
+.dropzone:hover,
+.dropzone:focus-within {
+  background-color: var(--color-surface);
+  border-style: solid;
+  box-shadow: var(--shadow-sm);
+  transform: translate(-1px, -1px);
+}
+
+.dropzone:focus-within {
+  outline: 3px solid var(--color-cyan);
+  outline-offset: 2px;
+}
+
+.dropzone[data-dragging='true'] {
+  background-color: var(--color-lime);
+  border-style: solid;
+  box-shadow: var(--shadow);
+  transform: translate(-3px, -3px) scale(1.01);
+}
+
+.dropzone[data-busy='true'] {
+  cursor: progress;
+  transform: none;
+  box-shadow: none;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  color: var(--color-on-accent);
+  background: var(--color-yellow);
+  border: var(--border);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--ease-medium);
+}
+
+.dropzone:hover .icon {
+  transform: translateY(-3px);
+}
+
+.dropzone[data-dragging='true'] .icon {
+  animation: bob 600ms ease-in-out infinite alternate;
+}
+
+.title {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: var(--color-ink);
+}
+
+.dropzone[data-dragging='true'] .title {
+  color: var(--color-on-accent);
+}
+
+.hint {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+}
+
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--color-on-accent);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes bob {
+  to {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .dropzone {
+    min-height: 150px;
+  }
+}

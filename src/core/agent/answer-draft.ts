@@ -33,6 +33,11 @@ export class AnswerDraft {
     this.emit({ type: 'block', block });
   }
 
+  /** True until a Result Block has been added. */
+  get isEmpty(): boolean {
+    return this.blocks.length === 0;
+  }
+
   /** A result id that is unique within the Answer, based on the agent's suggested name. */
   newResultId(name?: string): string {
     const base = (name ?? '').trim().replace(/\s+/g, '_') || `result${this.queries.length + 1}`;

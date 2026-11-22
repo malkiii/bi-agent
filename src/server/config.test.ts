@@ -23,35 +23,26 @@ describe('server config from environment', () => {
       ['openrouter', 'OPENROUTER_API_KEY', { apiKey: 'k' }],
       ['groq', 'GROQ_API_KEY', { apiKey: 'k' }],
       ['ollama', 'OLLAMA_BASE_URL', { baseUrl: 'k' }],
-    ])('%s is pre-selected with LLM_PROVIDER and %s', (provider, keyVar, credentials) => {
-      const config = parseServerConfig({ ...minimal, LLM_PROVIDER: provider, [keyVar]: 'k' });
+    ])('%s is offered once %s is set', (provider, keyVar, credentials) => {
+      const config = parseServerConfig({ ...minimal, [keyVar]: 'k' });
 
-      expect(config.llm).toEqual({ defaultProvider: provider, credentials: { [provider]: credentials } });
+      expect(config.llm).toEqual({ credentials: { [provider]: credentials } });
     });
 
-    test('Ollama defaults to a local server', () => {
-      const config = parseServerConfig({ ...minimal, LLM_PROVIDER: 'ollama' });
+    test('keeps every configured key, so admins can switch between them', () => {
+      const config = parseServerConfig({ ...minimal, OPENAI_API_KEY: 'o', GROQ_API_KEY: 'g', OLLAMA_BASE_URL: 'http://ollama:11434/api' });
 
-      expect(config.llm?.credentials.ollama).toEqual({ baseUrl: 'http://localhost:11434/api' });
-    });
-
-    test('keeps every configured key, so another provider can be chosen later', () => {
-      const config = parseServerConfig({
-        ...minimal,
-        LLM_PROVIDER: 'openai',
-        OPENAI_API_KEY: 'o',
-        GROQ_API_KEY: 'g',
+      expect(config.llm?.credentials).toEqual({
+        openai: { apiKey: 'o' },
+        groq: { apiKey: 'g' },
+        ollama: { baseUrl: 'http://ollama:11434/api' },
       });
-
-      expect(config.llm?.credentials).toEqual({ openai: { apiKey: 'o' }, groq: { apiKey: 'g' } });
     });
 
-    test('keys without LLM_PROVIDER make providers available to choose, with none pre-selected', () => {
-      const config = parseServerConfig({ ...minimal, ANTHROPIC_API_KEY: 'a', OLLAMA_BASE_URL: 'http://ollama:11434/api' });
-
-      expect(config.llm).toEqual({
-        defaultProvider: null,
-        credentials: { anthropic: { apiKey: 'a' }, ollama: { baseUrl: 'http://ollama:11434/api' } },
+    test('LLM_PROVIDER is no longer read', () => {
+      expect(parseServerConfig({ ...minimal, LLM_PROVIDER: 'ollama' }).llm).toBeNull();
+      expect(parseServerConfig({ ...minimal, LLM_PROVIDER: 'skynet', ANTHROPIC_API_KEY: 'a' }).llm).toEqual({
+        credentials: { anthropic: { apiKey: 'a' } },
       });
     });
 
@@ -59,31 +50,23 @@ describe('server config from environment', () => {
       const bare = parseServerConfig({ ...minimal, OPENAI_COMPATIBLE_BASE_URL: 'http://vllm:8000/v1' });
       const full = parseServerConfig({
         ...minimal,
-        LLM_PROVIDER: 'openai-compatible',
         OPENAI_COMPATIBLE_BASE_URL: 'https://api.deepseek.com/v1',
         OPENAI_COMPATIBLE_API_KEY: 'sk-d',
         OPENAI_COMPATIBLE_NAME: 'DeepSeek',
       });
 
-      expect(bare.llm).toEqual({ defaultProvider: null, credentials: { 'openai-compatible': { baseUrl: 'http://vllm:8000/v1' } } });
+      expect(bare.llm).toEqual({ credentials: { 'openai-compatible': { baseUrl: 'http://vllm:8000/v1' } } });
       expect(full.llm).toEqual({
-        defaultProvider: 'openai-compatible',
         credentials: { 'openai-compatible': { baseUrl: 'https://api.deepseek.com/v1', apiKey: 'sk-d' } },
         labels: { 'openai-compatible': 'DeepSeek' },
       });
     });
 
     test('an OpenAI-compatible server needs an http(s) base URL', () => {
-      expect(() => parseServerConfig({ ...minimal, LLM_PROVIDER: 'openai-compatible' })).toThrow(/OPENAI_COMPATIBLE_BASE_URL/);
       expect(() => parseServerConfig({ ...minimal, OPENAI_COMPATIBLE_BASE_URL: 'vllm:8000' })).toThrow(
         /OPENAI_COMPATIBLE_BASE_URL must be an http\(s\) URL/,
       );
       expect(() => parseServerConfig({ ...minimal, OPENAI_COMPATIBLE_API_KEY: 'k' })).toThrow(/OPENAI_COMPATIBLE_BASE_URL/);
-    });
-
-    test('refuses an unknown provider or a missing key', () => {
-      expect(() => parseServerConfig({ ...minimal, LLM_PROVIDER: 'skynet' })).toThrow(/LLM_PROVIDER/);
-      expect(() => parseServerConfig({ ...minimal, LLM_PROVIDER: 'anthropic' })).toThrow(/ANTHROPIC_API_KEY/);
     });
   });
 

@@ -1,6 +1,7 @@
 /**
- * Reads an uploaded CSV or XLSX file into sheets of cells. The first row of each sheet is
- * its header row. A CSV is one sheet named after the file.
+ * Reads an uploaded CSV, XLSX or SQLite file into sheets of cells. The first row of each sheet
+ * is its header row. A CSV is one sheet named after the file; each SQLite table or view is a
+ * sheet whose header is its column names.
  */
 import { ValidationError } from '../errors';
 
@@ -13,12 +14,18 @@ export interface RawSheet {
   rows: Cell[][];
 }
 
-export type UploadFormat = 'csv' | 'xlsx';
+export type UploadFormat = 'csv' | 'xlsx' | 'sqlite';
+
+/** File extensions read as SQLite databases. */
+export const SQLITE_EXTENSIONS = ['sqlite', 'sqlite3', 'db', 'db3'];
 
 export function uploadFormat(filename: string): UploadFormat {
-  const extension = filename.toLowerCase().split('.').pop();
+  const extension = filename.toLowerCase().split('.').pop() ?? '';
   if (extension === 'csv' || extension === 'xlsx') return extension;
-  throw new ValidationError('Upload a .csv or .xlsx file.', { file: 'Only CSV and XLSX files are supported' });
+  if (SQLITE_EXTENSIONS.includes(extension)) return 'sqlite';
+  throw new ValidationError('Upload a .csv, .xlsx or SQLite (.sqlite, .db) file.', {
+    file: 'Only CSV, XLSX and SQLite files are supported',
+  });
 }
 
 /** The file name without folders or extension. */
@@ -28,7 +35,9 @@ export function baseName(filename: string): string {
 }
 
 export async function readUploadFile(filename: string, content: Uint8Array): Promise<RawSheet[]> {
-  const sheets = uploadFormat(filename) === 'csv' ? [readCsv(baseName(filename), content)] : await readXlsx(content);
+  const format = uploadFormat(filename);
+  const sheets =
+    format === 'csv' ? [readCsv(baseName(filename), content)] : format === 'xlsx' ? await readXlsx(content) : await readSqlite(content);
   const usable = sheets.filter((s) => s.header.some((h) => h.trim() !== ''));
   if (usable.length === 0) {
     throw new ValidationError('The file is empty: the first row must hold the column names.', { file: 'Empty file' });
@@ -98,6 +107,43 @@ function parseCsv(text: string, delimiter: string): string[][] {
   if (quoted) throw new ValidationError('The CSV file has an unterminated quoted field.', { file: 'Malformed CSV' });
   if (field !== '' || record.length > 0) endRecord();
   return records;
+}
+
+/** Every table and view, read in memory (the file never touches the disk). */
+async function readSqlite(content: Uint8Array): Promise<RawSheet[]> {
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(':memory:');
+  try {
+    try {
+      db.deserialize(content);
+      db.prepare('SELECT count(*) FROM sqlite_schema').get();
+    } catch {
+      throw new ValidationError('This file could not be read as a SQLite database.', { file: 'Malformed SQLite' });
+    }
+    const relations = db
+      .prepare("SELECT name FROM sqlite_schema WHERE type IN ('table', 'view') AND substr(name, 1, 7) <> 'sqlite_' ORDER BY name")
+      .all() as { name: string }[];
+    return relations.map(({ name }) => {
+      const statement = db.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}"`);
+      statement.setReadBigInts(true);
+      statement.setReturnArrays(true);
+      const header = statement.columns().map((c) => c.name);
+      const rows = (statement.all() as unknown as unknown[][]).map((row) => row.map(sqliteCell));
+      return { name, header, rows };
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** Integers beyond JavaScript's safe range stay exact as text; BLOBs become hex text. */
+function sqliteCell(value: unknown): Cell {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'bigint') {
+    return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : String(value);
+  }
+  if (value instanceof Uint8Array) return Buffer.from(value).toString('hex');
+  return value as Cell;
 }
 
 async function readXlsx(content: Uint8Array): Promise<RawSheet[]> {

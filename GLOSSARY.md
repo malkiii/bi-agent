@@ -1,6 +1,6 @@
 # BI Agent
 
-An agent that answers business questions from an organisation's connected data: databases, Salesforce and uploaded spreadsheets. People talk to it by @mentioning it in Slack or through the web dashboard.
+An agent that answers business questions from an organisation's connected data: databases, Salesforce and uploaded spreadsheets or SQLite files. People talk to it by @mentioning it in Slack or through the web dashboard.
 
 ## Data
 
@@ -9,7 +9,7 @@ One configured connection the agent can query. Its kind is SQL database, MongoDB
 _Avoid_: Connection, integration, database (when you mean the configured thing)
 
 **Dataset**:
-One queryable table, collection, Salesforce object, or uploaded sheet inside a Data Source.
+One queryable table, collection, Salesforce object, or uploaded sheet (or SQLite table) inside a Data Source.
 _Avoid_: Table (when you mean the general idea), entity, model
 
 **Exposed Dataset**:

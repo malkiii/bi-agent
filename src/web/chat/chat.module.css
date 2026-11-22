@@ -41,6 +41,10 @@
 
 .prompt {
   align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
   max-width: 80%;
   padding: var(--space-3) var(--space-4);
   background: var(--color-cyan);
@@ -48,11 +52,12 @@
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  white-space: pre-wrap;
 }
 
 .prompt p {
+  align-self: stretch;
   margin: 0;
+  white-space: pre-wrap;
 }
 
 .answer {
@@ -174,9 +179,22 @@
   gap: var(--space-3);
 }
 
+.queryHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
 .queryMeta {
   margin: 0 0 var(--space-1);
   font-size: 0.9rem;
+}
+
+.queryHead .queryMeta {
+  margin: 0;
 }
 
 .queryText {
@@ -259,11 +277,6 @@
   color: var(--color-muted);
 }
 
-.downloads .btn {
-  padding: var(--space-1) var(--space-3);
-  font-size: 0.85rem;
-}
-
 .chart {
   margin: 0;
 }
@@ -332,4 +345,23 @@
   flex-basis: 100%;
   margin: 0;
   font-size: 0.875rem;
+}
+
+/* Text with a copy button beside it. */
+.copyable {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .hero,
+  .conversationHeader {
+    flex-wrap: wrap;
+  }
+
+  .prompt {
+    max-width: 92%;
+  }
 }

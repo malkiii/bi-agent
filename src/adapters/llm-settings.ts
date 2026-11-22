@@ -9,9 +9,10 @@ export interface LlmCredentials {
 }
 
 export interface LlmConfig {
-  /** LLM_PROVIDER: pre-selected in admin settings until an admin chooses; null when unset. */
-  defaultProvider: LlmProviderName | null;
-  /** Every provider with configured credentials; admins choose among these. */
+  /**
+   * Every provider with configured credentials; admins choose among these. Until they do, the
+   * first one in LLM_PROVIDERS order answers.
+   */
   credentials: Partial<Record<LlmProviderName, LlmCredentials>>;
   /** Display names that replace the defaults (OPENAI_COMPATIBLE_NAME). */
   labels?: Partial<Record<LlmProviderName, string>>;

@@ -1,17 +1,165 @@
 .page {
+  position: relative;
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: var(--space-6);
+  padding: var(--space-8) var(--space-6);
+  overflow: hidden;
+  background-color: var(--color-bg);
+  background-image: radial-gradient(var(--color-muted) 1.2px, transparent 1.2px);
+  background-size: 22px 22px;
 }
 
+/* Floating accent shapes behind the content. */
+.shape {
+  position: absolute;
+  border: var(--border);
+  box-shadow: var(--shadow);
+  animation: float 7s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+.shapeA {
+  top: 8%;
+  left: 6%;
+  width: 90px;
+  height: 90px;
+  background: var(--color-pink);
+  border-radius: 50%;
+}
+
+.shapeB {
+  bottom: 10%;
+  right: 8%;
+  width: 120px;
+  height: 120px;
+  background: var(--color-cyan);
+  border-radius: var(--radius);
+  rotate: 12deg;
+  animation-delay: -2s;
+}
+
+.shapeC {
+  top: 14%;
+  right: 22%;
+  width: 56px;
+  height: 56px;
+  background: var(--color-lime);
+  rotate: -14deg;
+  animation-delay: -4s;
+}
+
+.layout {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  width: 100%;
+  max-width: 920px;
+  background: var(--color-surface);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 10px 10px 0 0 var(--color-shadow);
+  animation: rise var(--ease-medium) both;
+}
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  color: var(--color-on-accent);
+  background-color: var(--color-yellow);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 14px,
+    color-mix(in srgb, var(--color-on-accent) 6%, transparent) 14px 28px
+  );
+  border-right: var(--border);
+}
+
+.mascot {
+  align-self: flex-start;
+}
+
+.tagline {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.15;
+  font-weight: 800;
+}
+
+.features {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.features li {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  animation: rise var(--ease-medium) both;
+  transition: transform var(--ease-fast);
+}
+
+.features li:hover {
+  transform: translateX(4px);
+}
+
+.features li span {
+  font-size: 0.9375rem;
+  color: var(--color-muted);
+}
+
+/* .card from globals; reset its frame since the layout draws one. */
 .panel {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-4);
-  text-align: center;
-  max-width: 420px;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-8);
+  border: 0;
+  box-shadow: none;
+}
+
+.brand {
+  align-self: flex-start;
+  padding: 0 var(--space-2);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--color-on-accent);
+  background: var(--color-yellow);
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.title {
+  margin: var(--space-2) 0 0;
+  font-size: 2.25rem;
+}
+
+.lead {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+.form {
+  margin-top: var(--space-3);
+}
+
+.signIn {
+  width: 100%;
+  justify-content: center;
+  padding: var(--space-3) var(--space-4);
+  font-size: 1.0625rem;
+  background: var(--color-pink);
 }
 
 .error {
@@ -20,5 +168,72 @@
   background: var(--color-danger);
   color: var(--color-on-accent);
   border: var(--border);
+  border-radius: var(--radius);
   font-weight: 700;
+  animation: shake 360ms ease both;
+}
+
+@keyframes float {
+  to {
+    translate: 0 -18px;
+  }
+}
+
+@keyframes shake {
+  25% {
+    transform: translateX(-6px);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+  75% {
+    transform: translateX(-3px);
+  }
+}
+
+/* Stack on narrow screens: the intro sits above the sign-in panel. */
+@media (max-width: 760px) {
+  .page {
+    padding: var(--space-4);
+    place-items: start center;
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+    box-shadow: var(--shadow);
+  }
+
+  .intro {
+    padding: var(--space-6) var(--space-4);
+    border-right: 0;
+    border-bottom: var(--border);
+  }
+
+  .mascot {
+    align-self: center;
+  }
+
+  .tagline {
+    font-size: 1.5rem;
+    text-align: center;
+  }
+
+  .panel {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .title {
+    font-size: 1.75rem;
+  }
+
+  .shapeB,
+  .shapeC {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .features {
+    display: none;
+  }
 }

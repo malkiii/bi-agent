@@ -23,6 +23,7 @@ import { RenameKpiForm } from '@/web/kpis/RenameKpiForm';
 import { formatInZone } from '@/web/reports/format';
 import styles from '@/web/reports/reports.module.css';
 import { getCore } from '@/web/server-runtime';
+import { CopyButton } from '@/web/components/CopyButton';
 
 export const metadata = { title: 'KPI · BIBot' };
 export const dynamic = 'force-dynamic';
@@ -82,7 +83,10 @@ export default async function KpiPage({ params }: { params: Promise<{ id: string
           {kpi.status === 'paused' && <span className={chat.muted}> Its Alerts skip their checks.</span>}
         </dd>
         <dt>Definition</dt>
-        <dd>“{kpi.prompt}”</dd>
+        <dd className={chat.copyable}>
+          <span>“{kpi.prompt}”</span>
+          <CopyButton text={kpi.prompt} label="Copy prompt" />
+        </dd>
         <dt>Created by</dt>
         <dd>
           {kpi.createdByName} on {kpi.createdAt.toISOString().slice(0, 10)}
@@ -109,9 +113,12 @@ export default async function KpiPage({ params }: { params: Promise<{ id: string
           <ol className={chat.queries}>
             {kpi.pinned.queries.map((q) => (
               <li key={q.resultId} className={chat.query}>
-                <p className={chat.queryMeta}>
-                  <strong>{q.dataSourceName}</strong> · {q.language.toUpperCase()} · {q.resultId}
-                </p>
+                <div className={chat.queryHead}>
+                  <p className={chat.queryMeta}>
+                    <strong>{q.dataSourceName}</strong> · {q.language.toUpperCase()} · {q.resultId}
+                  </p>
+                  <CopyButton text={q.query} label="Copy query" />
+                </div>
                 <pre className={chat.queryText}>{q.query}</pre>
               </li>
             ))}

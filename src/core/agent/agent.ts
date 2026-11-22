@@ -66,8 +66,9 @@ export async function runAgent(input: RunAgentInput): Promise<Answer> {
     }
     const total = await result.usage;
     usage = { inputTokens: total.inputTokens ?? 0, outputTokens: total.outputTokens ?? 0 };
-    // Models sometimes answer in plain text instead of calling emitText; keep it.
-    if (finalText.trim()) answer.addBlock({ type: 'text', markdown: finalText.trim() });
+    // Models sometimes answer in plain text instead of calling emitText; keep it. When they did
+    // use the emit tools, closing text only repeats the Answer, so it is dropped.
+    if (answer.isEmpty && finalText.trim()) answer.addBlock({ type: 'text', markdown: finalText.trim() });
     return answer.finish({ usage, finishedAt: input.now() });
   } catch (error) {
     input.onError?.(error);

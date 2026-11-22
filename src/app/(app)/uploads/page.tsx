@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { MAX_UPLOAD_BYTES } from '@/core';
+import { SQLITE_EXTENSIONS } from '@/core/uploads/read-file';
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 import { deleteUploadAction } from '@/web/uploads/actions';
@@ -9,9 +10,16 @@ import styles from '@/web/catalog/catalog.module.css';
 export const metadata = { title: 'Uploads · BIBot' };
 export const dynamic = 'force-dynamic';
 
+/** Which part of the file a Dataset came from: a CSV is one sheet, so it needs no mention. */
+function sourcePart(filename: string, sheet: string): string {
+  const extension = filename.toLowerCase().split('.').pop() ?? '';
+  if (extension === 'csv') return '';
+  return ` (${SQLITE_EXTENSIONS.includes(extension) ? 'table' : 'sheet'} ${sheet})`;
+}
+
 const NOTICES: Record<string, string> = { deleted: 'Dataset deleted.' };
 
-/** Upload CSV/XLSX files as Datasets, and see what everyone has uploaded. */
+/** Upload CSV/XLSX/SQLite files as Datasets, and see what everyone has uploaded. */
 export default async function UploadsPage({
   searchParams,
 }: {
@@ -42,7 +50,7 @@ export default async function UploadsPage({
               </h3>
               <p className={styles.muted}>
                 From {d.filename}
-                {d.sheet && !d.filename.toLowerCase().endsWith('.csv') && ` (sheet ${d.sheet})`}, updated{' '}
+                {d.sheet && sourcePart(d.filename, d.sheet)}, updated{' '}
                 {d.updatedAt.toISOString().slice(0, 16).replace('T', ' ')} UTC by {d.updatedBy}.
               </p>
               <p className={styles.muted}>

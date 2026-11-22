@@ -39,13 +39,6 @@
 .field input,
 .field select,
 .field textarea {
-  font: inherit;
-  font-weight: 400;
-  padding: var(--space-2) var(--space-3);
-  border: var(--border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: inherit;
   max-width: 100%;
 }
 
@@ -94,7 +87,10 @@
 .table th select {
   display: block;
   margin-top: var(--space-1);
-  font: inherit;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  font-size: inherit;
+  border-width: 2px;
 }
 
 .dataset {

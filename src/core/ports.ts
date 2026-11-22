@@ -29,8 +29,11 @@ export interface LlmModel {
 export interface LanguageModelProvider {
   /** Providers with configured credentials, in display order. */
   configuredProviders(): readonly string[];
-  /** The provider admin settings pre-select (LLM_PROVIDER); null when unset. */
-  defaultProvider(): string | null;
+  /**
+   * The model `provider` answers with until an admin chooses one; null when there is no
+   * sensible default (e.g. the provider lists no models). Throws when the provider is not configured.
+   */
+  defaultModel(provider: string): Promise<string | null>;
   /** The provider's display name, e.g. `OpenAI` or an OpenAI-compatible server's configured name. */
   providerLabel(provider: string): string;
   /** Asks the provider which chat models it offers. Throws when the provider is not configured or the request fails. */

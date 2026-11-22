@@ -11,7 +11,7 @@ beforeEach(async () => {
   for (const slackUserId of [ADMIN, MEMBER]) {
     await h.core.users.signIn({ slackUserId, slackTeamId: 'T1', name: slackUserId, email: null, image: null });
   }
-  h.llm.configure({ providers: ['anthropic', 'openai'], defaultProvider: 'anthropic' });
+  h.llm.configure({ providers: ['anthropic', 'openai'], defaultModels: { anthropic: 'claude-default', openai: 'gpt-default' } });
   // Start from a fresh install: no model chosen yet.
   await h.db.collection('appSettings').deleteMany({});
 });
@@ -50,17 +50,34 @@ describe('choosing the LLM in admin settings', () => {
     ]);
   });
 
-  test('until an admin chooses, nothing is active and LLM_PROVIDER is only pre-selected', async () => {
+  test('until an admin chooses, the first configured provider answers with its default model', async () => {
+    const answer = await askSomething();
+
+    expect(answer.status).toBe('complete');
+    expect(h.llm.choices).toEqual([{ provider: 'anthropic', model: 'claude-default' }]);
+    expect(await h.core.llmSettings.get(ADMIN)).toEqual({
+      active: { provider: 'anthropic', model: 'claude-default' },
+      chosen: false,
+      providers: ['anthropic', 'openai'],
+      labels: { anthropic: 'anthropic', openai: 'openai' },
+    });
+  });
+
+  test('when the first provider has no default model, the next one that has answers', async () => {
+    h.llm.configure({ providers: ['ollama', 'openai'], defaultModels: { openai: 'gpt-default' } });
+
+    await askSomething();
+
+    expect(h.llm.choices).toEqual([{ provider: 'openai', model: 'gpt-default' }]);
+  });
+
+  test('when no provider has a default model, nothing answers until an admin chooses', async () => {
+    h.llm.configure({ providers: ['ollama', 'openai-compatible'] });
+
     const answer = await askSomething();
 
     expect(answer.status).toBe('failed');
-    expect(h.llm.choices).toEqual([]);
-    expect(await h.core.llmSettings.get(ADMIN)).toEqual({
-      active: null,
-      providers: ['anthropic', 'openai'],
-      labels: { anthropic: 'anthropic', openai: 'openai' },
-      defaultProvider: 'anthropic',
-    });
+    expect((await h.core.llmSettings.get(ADMIN)).active).toBeNull();
   });
 
   test('admins see each provider by its display name, e.g. the configured name of an OpenAI-compatible server', async () => {
@@ -69,20 +86,14 @@ describe('choosing the LLM in admin settings', () => {
     expect((await h.core.llmSettings.get(ADMIN)).labels).toEqual({ openai: 'OpenAI', 'openai-compatible': 'vLLM' });
   });
 
-  test('a pre-selected provider without a key is not offered', async () => {
-    h.llm.configure({ providers: ['openai'], defaultProvider: 'anthropic' });
-
-    expect((await h.core.llmSettings.get(ADMIN)).defaultProvider).toBeNull();
-  });
-
   test('admins see only the providers whose keys are configured, and the active choice', async () => {
     const view = await h.core.llmSettings.set(ADMIN, { provider: 'openai', model: ' gpt-chosen ' });
 
     expect(view).toEqual({
       active: { provider: 'openai', model: 'gpt-chosen' },
+      chosen: true,
       providers: ['anthropic', 'openai'],
       labels: { anthropic: 'anthropic', openai: 'openai' },
-      defaultProvider: 'anthropic',
     });
   });
 
@@ -92,7 +103,7 @@ describe('choosing the LLM in admin settings', () => {
     });
     await expect(h.core.llmSettings.set(ADMIN, { provider: 'openai', model: '  ' })).rejects.toBeInstanceOf(ValidationError);
 
-    expect((await h.core.llmSettings.get(ADMIN)).active).toBeNull();
+    expect((await h.core.llmSettings.get(ADMIN)).chosen).toBe(false);
   });
 
   test('members can neither see nor change the setting, nor list models', async () => {
@@ -100,17 +111,17 @@ describe('choosing the LLM in admin settings', () => {
     await expect(h.core.llmSettings.set(MEMBER, { provider: 'openai', model: 'gpt-chosen' })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(h.core.llmSettings.listModels(MEMBER, 'openai')).rejects.toBeInstanceOf(ForbiddenError);
 
-    expect((await h.core.llmSettings.get(ADMIN)).active).toBeNull();
+    expect((await h.core.llmSettings.get(ADMIN)).chosen).toBe(false);
   });
 
-  test('when the chosen provider loses its key, nothing is active until an admin chooses again', async () => {
+  test('when the chosen provider loses its key, the first configured provider takes over', async () => {
     await h.core.llmSettings.set(ADMIN, { provider: 'openai', model: 'gpt-chosen' });
-    h.llm.configure({ providers: ['anthropic'] });
+    h.llm.configure({ providers: ['anthropic'], defaultModels: { anthropic: 'claude-default' } });
 
-    const answer = await askSomething();
+    await askSomething();
 
-    expect(answer.status).toBe('failed');
-    expect((await h.core.llmSettings.get(ADMIN)).active).toBeNull();
+    expect(h.llm.choices.at(-1)).toEqual({ provider: 'anthropic', model: 'claude-default' });
+    expect(await h.core.llmSettings.get(ADMIN)).toMatchObject({ active: { provider: 'anthropic' }, chosen: false });
   });
 
   test('with no LLM configured at all, the Answer fails instead of crashing', async () => {

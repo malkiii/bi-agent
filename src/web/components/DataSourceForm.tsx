@@ -13,18 +13,21 @@ export interface DataSourceFormProps {
   existing?: { id: string; name: string; config: Record<string, unknown>; secrets: Record<string, boolean> };
   saveAction: FormAction;
   testAction: FormAction;
+  /** Values to start a new Data Source with (e.g. from a pasted connection URL), by field key. */
+  initialValues?: Record<string, string>;
 }
 
 /** Create/edit form for one Data Source kind, rendered from the kind's field descriptors. */
-export function DataSourceForm({ kind, existing, saveAction, testAction }: DataSourceFormProps) {
+export function DataSourceForm({ kind, existing, saveAction, testAction, initialValues }: DataSourceFormProps) {
   const [saveState, save, saving] = useActionState(saveAction, {});
   const [testState, test, testing] = useActionState(testAction, {});
   // Controlled values: React resets uncontrolled forms after every action, including "Test".
   const [values, setValues] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = { name: existing?.name ?? '' };
+    const initial: Record<string, string> = { name: existing?.name ?? initialValues?.name ?? '' };
     for (const f of kind.fields) {
       const stored = existing?.config[f.key];
-      initial[f.key] = f.secret ? '' : stored !== undefined ? String(stored) : (f.defaultValue ?? '');
+      initial[f.key] =
+        initialValues?.[f.key] ?? (f.secret ? '' : stored !== undefined ? String(stored) : (f.defaultValue ?? ''));
     }
     return initial;
   });

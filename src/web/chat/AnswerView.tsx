@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { AnswerSource, ExecutedQuery, ResultBlock, TableBlock } from '@/core';
+import { CopyButton } from '@/web/components/CopyButton';
 import { ChartView } from './ChartView';
 import { Markdown } from './Markdown';
 import styles from './chat.module.css';
@@ -21,6 +22,7 @@ export interface AnswerViewProps {
 /** One Answer: its Result Blocks, the Data Sources used and a "show query" toggle. */
 export function AnswerView({ blocks, sources, queries, status = 'complete', error, progress, messageId }: AnswerViewProps) {
   const [showQueries, setShowQueries] = useState(false);
+  const copyText = status === 'complete' ? answerText(blocks) : '';
   return (
     <article className={`card ${styles.answer}`} aria-busy={status === 'pending'}>
       {blocks.map((block, i) => (
@@ -32,8 +34,9 @@ export function AnswerView({ blocks, sources, queries, status = 'complete', erro
           {error ?? 'Something went wrong.'}
         </p>
       )}
-      {(sources.length > 0 || queries.length > 0) && (
+      {(sources.length > 0 || queries.length > 0 || copyText) && (
         <footer className={styles.answerFooter}>
+          {copyText && <CopyButton text={copyText} label="Copy answer" />}
           {sources.length > 0 && (
             <p className={styles.sources}>
               <span>Sources:</span>{' '}
@@ -93,10 +96,13 @@ export function BlockView({ block, download }: { block: ResultBlock; download?: 
 function QueryView({ query }: { query: ExecutedQuery }) {
   return (
     <li className={styles.query}>
-      <p className={styles.queryMeta}>
-        <strong>{query.dataSourceName}</strong> · {query.language.toUpperCase()} ·{' '}
-        {query.ok ? `${query.rowCount} row${query.rowCount === 1 ? '' : 's'}${query.truncated ? ' (truncated)' : ''}` : 'failed'}
-      </p>
+      <div className={styles.queryHead}>
+        <p className={styles.queryMeta}>
+          <strong>{query.dataSourceName}</strong> · {query.language.toUpperCase()} ·{' '}
+          {query.ok ? `${query.rowCount} row${query.rowCount === 1 ? '' : 's'}${query.truncated ? ' (truncated)' : ''}` : 'failed'}
+        </p>
+        <CopyButton text={query.query} label="Copy query" />
+      </div>
       <pre className={styles.queryText}>{query.query}</pre>
       {!query.ok && query.error && <p className={styles.queryError}>{query.error}</p>}
     </li>
@@ -150,24 +156,44 @@ function TableView({ block, download }: { block: TableBlock; download?: string }
           </tbody>
         </table>
       </div>
-      {(block.truncated || download) && (
-        <div className={styles.tableFooter}>
-          {block.truncated && <p className={styles.truncated}>Showing the first {block.rows.length} rows.</p>}
+      <div className={styles.tableFooter}>
+        {block.truncated && <p className={styles.truncated}>Showing the first {block.rows.length} rows.</p>}
+        <p className={styles.downloads}>
+          <CopyButton text={tableText(block)} label="Copy table" />
           {download && (
-            <p className={styles.downloads}>
+            <>
               <span>Download {block.rows.length.toLocaleString()} rows:</span>
-              <a className="btn btn--ghost" href={`${download}?format=csv`} download>
+              <a className="btn btn--ghost btn--sm" href={`${download}?format=csv`} download>
                 CSV
               </a>
-              <a className="btn btn--ghost" href={`${download}?format=xlsx`} download>
+              <a className="btn btn--ghost btn--sm" href={`${download}?format=xlsx`} download>
                 XLSX
               </a>
-            </p>
+            </>
           )}
-        </div>
-      )}
+        </p>
+      </div>
     </figure>
   );
+}
+
+/** The Answer as plain text to paste elsewhere: text as Markdown, tables as tab-separated rows. */
+function answerText(blocks: ResultBlock[]): string {
+  return blocks
+    .map((block) => {
+      if (block.type === 'text') return block.markdown.trim();
+      if (block.type === 'table') return [block.title, tableText(block)].filter(Boolean).join('\n');
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+/** A table as tab-separated values with a header row, which spreadsheets paste as cells. */
+function tableText(block: TableBlock): string {
+  const cell = (value: unknown) => (value === null || value === undefined ? '' : format(value).replace(/[\t\r\n]+/g, ' '));
+  const lines = [block.columns.map((c) => cell(c.name)), ...block.rows.map((row) => row.map(cell))];
+  return lines.map((line) => line.join('\t')).join('\n');
 }
 
 const isNumeric = (type: string | undefined) => type === 'integer' || type === 'number';

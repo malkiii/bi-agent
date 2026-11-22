@@ -125,6 +125,30 @@ describe('answering a Prompt in a web Conversation', () => {
     expect(answer.status).toBe('complete');
   });
 
+  test('closing plain text after emitted blocks is not added again as an extra Text block', async () => {
+    h.llm.script(
+      { toolCalls: [{ toolName: 'runQuery', input: { dataSourceId: warehouseId, query: NORTH_SQL, name: 'north' } }] },
+      { toolCalls: [{ toolName: 'emitText', input: { markdown: 'North sold **17.75**.' } }] },
+      { text: 'North sold 17.75.' },
+    );
+    const events: AnswerEvent[] = [];
+
+    const conversation = await h.core.conversations.startWeb(MEMBER);
+    const answer = await h.core.conversations.ask(MEMBER, conversation.id, 'North?', { onEvent: (e) => events.push(e) });
+
+    expect(answer.blocks).toEqual([{ type: 'text', markdown: 'North sold **17.75**.' }]);
+    expect(events.filter((e) => e.type === 'block')).toHaveLength(1);
+  });
+
+  test('an Answer given only as plain text is kept as a Text block', async () => {
+    h.llm.script({ text: 'I can only see orders.' });
+
+    const conversation = await h.core.conversations.startWeb(MEMBER);
+    const answer = await h.core.conversations.ask(MEMBER, conversation.id, 'Hi');
+
+    expect(answer.blocks).toEqual([{ type: 'text', markdown: 'I can only see orders.' }]);
+  });
+
   test('when the model fails, a failed Answer with a friendly message is stored', async () => {
     h.llm.script();
 

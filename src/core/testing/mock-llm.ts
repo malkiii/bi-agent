@@ -28,28 +28,28 @@ export class MockLlm implements LanguageModelProvider {
   /** Every provider/model a model was built for, in order. */
   readonly choices: LlmChoice[] = [];
   private providers: readonly string[] = ['mock'];
-  private preselected: string | null = null;
+  private defaults: Record<string, string> = {};
   private labels: Record<string, string> = {};
   private models: Record<string, LlmModel[] | Error> = {};
 
   /**
-   * Pretend these providers have configured credentials, LLM_PROVIDER is `defaultProvider`,
-   * each provider offers `models` (an Error makes listing fail), and is named by `labels`
-   * (else by its id).
+   * Pretend these providers have configured credentials, each answers with `defaultModels`
+   * until an admin chooses (none when absent), offers `models` (an Error makes listing fail),
+   * and is named by `labels` (else by its id).
    */
   configure({
     providers,
-    defaultProvider = null,
+    defaultModels = {},
     models = {},
     labels = {},
   }: {
     providers: readonly string[];
-    defaultProvider?: string | null;
+    defaultModels?: Record<string, string>;
     models?: Record<string, LlmModel[] | Error>;
     labels?: Record<string, string>;
   }): void {
     this.providers = providers;
-    this.preselected = defaultProvider;
+    this.defaults = defaultModels;
     this.models = models;
     this.labels = labels;
   }
@@ -58,8 +58,9 @@ export class MockLlm implements LanguageModelProvider {
     return this.providers;
   }
 
-  defaultProvider() {
-    return this.preselected;
+  async defaultModel(provider: string) {
+    if (!this.providers.includes(provider)) throw new Error(`MockLlm: ${provider} is not configured`);
+    return this.defaults[provider] ?? null;
   }
 
   providerLabel(provider: string) {

@@ -19,6 +19,7 @@ import { ApproveButton } from '@/web/reports/ApproveButton';
 import { formatInZone, statusLabel } from '@/web/reports/format';
 import styles from '@/web/reports/reports.module.css';
 import { getCore } from '@/web/server-runtime';
+import { CopyButton } from '@/web/components/CopyButton';
 
 export const metadata = { title: 'Report · BIBot' };
 export const dynamic = 'force-dynamic';
@@ -76,7 +77,10 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           <span className="tag">{statusLabel(report.status)}</span>
         </dd>
         <dt>Prompt</dt>
-        <dd>“{report.prompt}”</dd>
+        <dd className={chat.copyable}>
+          <span>“{report.prompt}”</span>
+          <CopyButton text={report.prompt} label="Copy prompt" />
+        </dd>
         <dt>Schedule</dt>
         <dd>
           {describeSchedule(report.schedule)} ({report.timezone})
@@ -109,9 +113,12 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           <ol className={chat.queries}>
             {report.pinned.queries.map((q) => (
               <li key={q.resultId} className={chat.query}>
-                <p className={chat.queryMeta}>
-                  <strong>{q.dataSourceName}</strong> · {q.language.toUpperCase()} · {q.resultId}
-                </p>
+                <div className={chat.queryHead}>
+                  <p className={chat.queryMeta}>
+                    <strong>{q.dataSourceName}</strong> · {q.language.toUpperCase()} · {q.resultId}
+                  </p>
+                  <CopyButton text={q.query} label="Copy query" />
+                </div>
                 <pre className={chat.queryText}>{q.query}</pre>
               </li>
             ))}

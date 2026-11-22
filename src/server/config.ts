@@ -22,7 +22,7 @@ export interface ServerConfig {
   /** Shared volume for uploaded Datasets (ADR 0003); `web` and `worker` must see the same directory. */
   uploadsDir: string;
   core: AppCoreConfig;
-  /** LLM credentials and the pre-selected provider; null when no provider is configured (Answers then fail). */
+  /** LLM credentials, one entry per key (or server URL) in the environment; null when there are none (Answers then fail). */
   llm: LlmConfig | null;
   /** Slack bot (worker Socket Mode, outbound messages); absent when SLACK_BOT_TOKEN is unset. */
   slack?: SlackSettings;
@@ -34,8 +34,6 @@ export interface SlackSettings {
   /** App-level token (`xapp-…`, `connections:write`) for Socket Mode; only the worker needs it. */
   appToken?: string;
 }
-
-export const DEFAULT_OLLAMA_BASE_URL = 'http://localhost:11434/api';
 
 const required = (name: string) => z.string({ error: `${name} is required` }).trim().min(1, `${name} is required`);
 const optional = z
@@ -52,9 +50,6 @@ const schema = z
     SLACK_TEAM_ID: required('SLACK_TEAM_ID'),
     ADMIN_SLACK_USER_IDS: z.string().default(''),
     ENCRYPTION_KEY: required('ENCRYPTION_KEY').refine(isEncryptionKey, 'ENCRYPTION_KEY must be 32 bytes, base64- or hex-encoded (openssl rand -base64 32)'),
-    LLM_PROVIDER: optional.pipe(
-      z.enum(LLM_PROVIDERS, { error: `LLM_PROVIDER must be one of ${LLM_PROVIDERS.join(', ')}` }).optional(),
-    ),
     ANTHROPIC_API_KEY: optional,
     OPENAI_API_KEY: optional,
     GOOGLE_GENERATIVE_AI_API_KEY: optional,
@@ -76,11 +71,6 @@ const schema = z
     if (e.OPENAI_COMPATIBLE_API_KEY && !e.OPENAI_COMPATIBLE_BASE_URL) {
       ctx.addIssue({ code: 'custom', message: 'OPENAI_COMPATIBLE_BASE_URL is required when OPENAI_COMPATIBLE_API_KEY is set' });
     }
-    if (!e.LLM_PROVIDER) return;
-    const keyVar = LLM_CREDENTIAL_ENV[e.LLM_PROVIDER] as keyof typeof e;
-    if (e.LLM_PROVIDER !== 'ollama' && !e[keyVar]) {
-      ctx.addIssue({ code: 'custom', message: `${keyVar} is required when LLM_PROVIDER=${e.LLM_PROVIDER}` });
-    }
   });
 
 type Env = z.infer<typeof schema>;
@@ -90,7 +80,7 @@ function llmConfig(e: Env): LlmConfig | null {
   for (const provider of LLM_PROVIDERS) {
     const value = e[LLM_CREDENTIAL_ENV[provider] as keyof Env] as string | undefined;
     if (provider === 'ollama') {
-      if (value || e.LLM_PROVIDER === 'ollama') credentials.ollama = { baseUrl: value ?? DEFAULT_OLLAMA_BASE_URL };
+      if (value) credentials.ollama = { baseUrl: value };
     } else if (provider === 'openai-compatible') {
       if (value) {
         credentials[provider] = { baseUrl: value, ...(e.OPENAI_COMPATIBLE_API_KEY && { apiKey: e.OPENAI_COMPATIBLE_API_KEY }) };
@@ -101,7 +91,6 @@ function llmConfig(e: Env): LlmConfig | null {
   }
   if (Object.keys(credentials).length === 0) return null;
   return {
-    defaultProvider: e.LLM_PROVIDER ?? null,
     credentials,
     ...(e.OPENAI_COMPATIBLE_NAME && { labels: { 'openai-compatible': e.OPENAI_COMPATIBLE_NAME } }),
   };
