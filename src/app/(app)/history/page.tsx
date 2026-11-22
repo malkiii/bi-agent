@@ -1,11 +1,17 @@
 import Link from 'next/link';
 import type { ConversationSource } from '@/core';
+import { DeleteConversationButton } from '@/web/chat/DeleteConversationButton';
 import { BIBot } from '@/web/components/BIBot';
 import { requireUser } from '@/web/current-user';
 import { getCore } from '@/web/server-runtime';
 import styles from './history.module.css';
 
 export const metadata = { title: 'History · BIBot' };
+
+const NOTICES: Record<string, string> = {
+  deleted: 'Chat deleted.',
+  gone: 'That chat was already deleted.',
+};
 
 const FILTERS: { label: string; source?: ConversationSource['kind'] }[] = [
   { label: 'All' },
@@ -21,8 +27,12 @@ function href(source: ConversationSource['kind'] | undefined, page = 1) {
   return query ? `/history?${query}` : '/history';
 }
 
-/** The Conversations the signed-in person took part in, newest first, filterable by Source. */
-export default async function HistoryPage({ searchParams }: { searchParams: Promise<{ source?: string; page?: string }> }) {
+/** The Conversations the signed-in person took part in, newest first, filterable by Source. Any Participant can delete one. */
+export default async function HistoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ source?: string; page?: string; notice?: string; error?: string }>;
+}) {
   const params = await searchParams;
   const source = params.source === 'web' || params.source === 'slack' ? params.source : undefined;
   const user = await requireUser();
@@ -30,6 +40,8 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
     source,
     page: Number(params.page) || 1,
   });
+  const notice = params.notice ? NOTICES[params.notice] : undefined;
+  const here = href(source, page);
 
   return (
     <div className={styles.page}>
@@ -48,6 +60,13 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
           ))}
         </nav>
       </header>
+
+      {notice && <p role="status">{notice}</p>}
+      {params.error && (
+        <p role="alert" className={styles.error}>
+          {params.error}
+        </p>
+      )}
 
       {conversations.length === 0 ? (
         <section className={`card ${styles.empty}`}>
@@ -71,11 +90,14 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
                   {c.participants.length > 1 && ` · ${c.participants.length} Participants`}
                 </p>
               </div>
-              {c.source.kind === 'slack' && (
-                <Link href={`/chat/fork/${c.id}`} className="btn btn--cyan">
-                  Open in dashboard
-                </Link>
-              )}
+              <div className={styles.itemActions}>
+                {c.source.kind === 'slack' && (
+                  <Link href={`/chat/fork/${c.id}`} className="btn btn--cyan">
+                    Open in dashboard
+                  </Link>
+                )}
+                <DeleteConversationButton conversationId={c.id} back={here} className="btn btn--ghost" />
+              </div>
             </li>
           ))}
         </ul>

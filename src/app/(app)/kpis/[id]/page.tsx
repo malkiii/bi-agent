@@ -85,7 +85,6 @@ export default async function KpiPage({ params }: { params: Promise<{ id: string
         <dt>Definition</dt>
         <dd className={chat.copyable}>
           <span>“{kpi.prompt}”</span>
-          <CopyButton text={kpi.prompt} label="Copy prompt" />
         </dd>
         <dt>Created by</dt>
         <dd>

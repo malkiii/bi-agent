@@ -180,7 +180,6 @@ function EntryDetails({ entry }: { entry: AuditEntry }) {
     return (
       <div className={styles.copyable}>
         <span>“{prompt}”</span>
-        <CopyButton text={prompt} label="Copy prompt" />
       </div>
     );
   }

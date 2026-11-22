@@ -72,7 +72,7 @@ a:hover {
 }
 
 /*
- * Scrollbars: a chunky bordered thumb on the page background (Chromium, Safari).
+ * Scrollbars: a square, single-colour bordered thumb on the page background (Chromium, Safari).
  * Firefox only takes two colours, so it gets an ink thumb on the page background.
  */
 ::-webkit-scrollbar {
@@ -95,15 +95,7 @@ a:hover {
 ::-webkit-scrollbar-thumb {
   background: var(--color-yellow);
   border: 2px solid var(--color-border);
-  border-radius: var(--radius);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-pink);
-}
-
-::-webkit-scrollbar-thumb:active {
-  background: var(--color-cyan);
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-corner {

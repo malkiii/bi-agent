@@ -114,9 +114,9 @@ export interface Conversations {
    */
   fork(actorSlackUserId: string, slackConversationId: string): Promise<Conversation>;
   /**
-   * Admin only (ForbiddenError): deletes a Conversation and its messages, whoever took part
-   * (NotFoundError when it doesn't exist). ValidationError while a Report or draft KPI was made
-   * from it: approving them pins its latest Answer again.
+   * Deletes a Conversation and its messages for everyone. Any Participant may, and an admin may
+   * whoever took part (NotFoundError when it doesn't exist or `actor` may not see it).
+   * ValidationError while a Report or draft KPI was made from it: approving them pins its latest Answer again.
    */
   remove(actorSlackUserId: string, conversationId: string): Promise<void>;
   /** Admin only (ForbiddenError): every Conversation with at least one Prompt, whoever took part; like `history`. */
@@ -406,7 +406,11 @@ export function createConversations({
     },
 
     async remove(actor, conversationId) {
-      await users.requireAdmin(actor);
+      const existing = await conversations.findOne({ _id: conversationId });
+      if (!existing) throw new NotFoundError('Conversation not found.');
+      if (!existing.participants.includes(actor) && (await users.get(actor))?.role !== 'admin') {
+        throw new NotFoundError('Conversation not found.');
+      }
       const uses = (await usesOf?.(conversationId)) ?? [];
       if (uses.length > 0) {
         throw new ValidationError(`This Conversation is used by ${uses.join(', ')}. Delete ${uses.length > 1 ? 'them' : 'it'} first.`);

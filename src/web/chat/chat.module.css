@@ -365,3 +365,17 @@
     max-width: 92%;
   }
 }
+
+.conversationFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 2px dashed var(--color-border);
+}
+
+.conversationFooter .error {
+  flex: 1;
+}

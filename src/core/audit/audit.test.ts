@@ -5,6 +5,7 @@ import { CONTRACT_FIXTURE_SQL, createPostgresTestDatabase, type PostgresTestData
 
 const ADMIN = 'UADMIN';
 const MEMBER = 'UMEMBER';
+const OTHER_MEMBER = 'UOTHER';
 
 const TOTAL_SQL = 'SELECT sum(amount) AS total FROM orders';
 
@@ -15,7 +16,7 @@ beforeEach(async () => {
   pgDb = await createPostgresTestDatabase();
   await pgDb.sql(CONTRACT_FIXTURE_SQL);
   h = await createTestHarness({ config: { slackTeamId: 'T1', adminSlackUserIds: [ADMIN] } });
-  for (const slackUserId of [ADMIN, MEMBER]) {
+  for (const slackUserId of [ADMIN, MEMBER, OTHER_MEMBER]) {
     await h.core.users.signIn({ slackUserId, slackTeamId: 'T1', name: slackUserId, email: null, image: null });
   }
   const { host, port, database, user, password } = pgDb.connection;
@@ -211,12 +212,12 @@ describe('scheduled work', () => {
 });
 
 describe('admin cleanup', () => {
-  test('an admin deletes a Conversation with its messages; members cannot', async () => {
+  test('an admin deletes any Conversation with its messages; other non-Participants cannot', async () => {
     const conversation = await h.core.conversations.startWeb(MEMBER);
     scriptAnswer();
     await h.core.conversations.ask(MEMBER, conversation.id, 'Total sales?');
 
-    await expect(h.core.conversations.remove(MEMBER, conversation.id)).rejects.toThrow(ForbiddenError);
+    await expect(h.core.conversations.remove(OTHER_MEMBER, conversation.id)).rejects.toThrow(NotFoundError);
     await h.core.conversations.remove(ADMIN, conversation.id);
 
     await expect(h.core.conversations.get(MEMBER, conversation.id)).rejects.toThrow(NotFoundError);
@@ -224,6 +225,20 @@ describe('admin cleanup', () => {
     await expect(h.core.conversations.remove(ADMIN, conversation.id)).rejects.toThrow(NotFoundError);
     expect(await entries({ type: 'conversation' })).toMatchObject([
       { action: 'deleted', actor: ADMIN, target: { id: conversation.id, name: 'Total sales?' } },
+    ]);
+  });
+
+  test('a Participant deletes their own Conversation for everyone', async () => {
+    const conversation = await h.core.conversations.startWeb(MEMBER);
+    scriptAnswer();
+    await h.core.conversations.ask(MEMBER, conversation.id, 'Total sales?');
+
+    await h.core.conversations.remove(MEMBER, conversation.id);
+
+    expect(await h.core.conversations.list(MEMBER)).toEqual([]);
+    await expect(h.core.conversations.remove(MEMBER, conversation.id)).rejects.toThrow(NotFoundError);
+    expect(await entries({ type: 'conversation' })).toMatchObject([
+      { action: 'deleted', actor: MEMBER, target: { id: conversation.id, name: 'Total sales?' } },
     ]);
   });
 

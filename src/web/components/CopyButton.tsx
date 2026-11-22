@@ -4,9 +4,19 @@ import { useEffect, useRef, useState } from 'react';
 
 /**
  * A small button that copies `text` to the clipboard and says "Copied" for a moment.
- * `label` names what is copied for screen readers ("Copy query").
+ * `label` names what is copied for screen readers ("Copy query"); `caption` is the visible idle text.
  */
-export function CopyButton({ text, label = 'Copy', className = '' }: { text: string; label?: string; className?: string }) {
+export function CopyButton({
+  text,
+  label = 'Copy',
+  caption = 'Copy',
+  className = '',
+}: {
+  text: string;
+  label?: string;
+  caption?: string;
+  className?: string;
+}) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -26,8 +36,8 @@ export function CopyButton({ text, label = 'Copy', className = '' }: { text: str
       title={label}
     >
       <CopyIcon done={state === 'copied'} />
-      <span aria-live="polite">{state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : 'Copy'}</span>
-      {state === 'idle' && label !== 'Copy' && <span className="sr-only">{label.replace(/^Copy\s*/, '')}</span>}
+      <span aria-live="polite">{state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : caption}</span>
+      {state === 'idle' && label !== caption && <span className="sr-only">{label.replace(/^Copy\s*/, '')}</span>}
     </button>
   );
 }

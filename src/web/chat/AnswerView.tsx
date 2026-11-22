@@ -36,7 +36,7 @@ export function AnswerView({ blocks, sources, queries, status = 'complete', erro
       )}
       {(sources.length > 0 || queries.length > 0 || copyText) && (
         <footer className={styles.answerFooter}>
-          {copyText && <CopyButton text={copyText} label="Copy answer" />}
+          {copyText && <CopyButton text={copyText} label="Copy this answer" caption="Copy this answer" />}
           {sources.length > 0 && (
             <p className={styles.sources}>
               <span>Sources:</span>{' '}
@@ -159,7 +159,6 @@ function TableView({ block, download }: { block: TableBlock; download?: string }
       <div className={styles.tableFooter}>
         {block.truncated && <p className={styles.truncated}>Showing the first {block.rows.length} rows.</p>}
         <p className={styles.downloads}>
-          <CopyButton text={tableText(block)} label="Copy table" />
           {download && (
             <>
               <span>Download {block.rows.length.toLocaleString()} rows:</span>
